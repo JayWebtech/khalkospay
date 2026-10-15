@@ -133,7 +133,7 @@ function LiveCall({ call }: { call: Call }) {
         </header>
 
         <div className="flex flex-1 flex-col items-center justify-center">
-          <VoiceOrb levels={call.levels} active={!connecting} thinking={call.activity === 'thinking'} />
+          <VoiceOrb levels={call.levels} active={!connecting} thinking={call.activity === 'thinking'} compact={Boolean(call.walletRequest)} />
           <p className="mt-1 text-base font-medium" aria-live="polite">
             {status}
             {call.muted && !connecting ? ' · You are muted' : ''}

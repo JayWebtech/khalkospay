@@ -16,6 +16,7 @@ import {
   DrawerFooter,
   DrawerHeader,
   DrawerTitle,
+  DrawerTrigger,
 } from '@/components/ui/drawer'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
@@ -37,6 +38,7 @@ export function OfframpPage() {
   const [bank, setBank] = useState<Bank | null>(null)
   const [accountNumber, setAccountNumber] = useState('')
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewBusy, setReviewBusy] = useState(false)
   const [lockedOrder, setLockedOrder] = useState<Order | null>(null)
   const { quote, loading: quoting, error: quoteError } = useQuote(amount)
   const account = useAccountName(bank?.code ?? null, accountNumber)
@@ -205,17 +207,14 @@ export function OfframpPage() {
         </section>
       </div>
 
-      <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] mt-auto bg-gradient-to-t from-background from-60% to-transparent px-4 pt-6 pb-3">
-        <Button size="xl" className="w-full" disabled={!ready} onClick={() => setReviewOpen(true)}>
-          Review cash-out
-        </Button>
-      </div>
-
-      {quote && bank && account.name && wallet.address && (
-        <ReviewDrawer
-          open={reviewOpen}
-          onOpenChange={setReviewOpen}
-          quote={quote}
+      <Drawer open={reviewOpen} onOpenChange={(open) => !reviewBusy && setReviewOpen(open)}>
+        <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] mt-auto bg-gradient-to-t from-background from-60% to-transparent px-4 pt-6 pb-3">
+          <DrawerTrigger render={<Button size="xl" className="w-full" disabled={!ready} />}>Review cash-out</DrawerTrigger>
+        </div>
+        {quote && bank && account.name && wallet.address && (
+          <ReviewSheet
+            onBusyChange={setReviewBusy}
+            quote={quote}
           bank={bank}
           accountName={account.name}
           accountNumber={accountNumber}
@@ -225,9 +224,10 @@ export function OfframpPage() {
           feePercent={config?.feePercent ?? 1}
           lockedOrder={lockedOrder}
           onLocked={setLockedOrder}
-          onPaid={(order) => navigate(`/cash-out/${order.id}`)}
-        />
-      )}
+            onPaid={(order) => navigate(`/cash-out/${order.id}`)}
+          />
+        )}
+      </Drawer>
     </div>
   )
 }
@@ -241,9 +241,8 @@ const PHASE_LABEL: Record<ReviewPhase, string> = {
   reporting: 'Confirming payment…',
 }
 
-function ReviewDrawer(props: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
+function ReviewSheet(props: {
+  onBusyChange: (busy: boolean) => void
   quote: Quote
   bank: Bank
   accountName: string
@@ -259,7 +258,9 @@ function ReviewDrawer(props: {
   const pay = useWallet((s) => s.pay)
   const [phase, setPhase] = useState<ReviewPhase>('idle')
   const [error, setError] = useState<string | null>(null)
-  const { quote, bank } = props
+  const { quote, bank, onBusyChange } = props
+
+  useEffect(() => onBusyChange(phase !== 'idle'), [phase, onBusyChange])
 
   async function confirm() {
     setError(null)
@@ -293,49 +294,47 @@ function ReviewDrawer(props: {
   const rate = locked?.rateNgnPerNim ?? quote.rateNgnPerNim
 
   return (
-    <Drawer open={props.open} onOpenChange={(open) => phase === 'idle' && props.onOpenChange(open)}>
-      <DrawerContent>
-        <DrawerHeader>
-          <DrawerTitle className="text-lg font-semibold">Review cash-out</DrawerTitle>
-          <DrawerDescription>
-            {locked ? 'Your rate is locked.' : `Your rate locks for ${props.quoteTtlMinutes} minutes when you continue.`}
-          </DrawerDescription>
-        </DrawerHeader>
+    <DrawerContent>
+      <DrawerHeader>
+        <DrawerTitle className="text-lg font-semibold">Review cash-out</DrawerTitle>
+        <DrawerDescription>
+          {locked ? 'Your rate is locked.' : `Your rate locks for ${props.quoteTtlMinutes} minutes when you continue.`}
+        </DrawerDescription>
+      </DrawerHeader>
 
-        <div className="flex flex-col gap-4 overflow-y-auto px-4 py-4">
-          <div>
-            <p className="text-sm text-muted-foreground">You receive</p>
-            <p className="text-3xl font-semibold tracking-tight tabular-nums">{formatNgn(payout)}</p>
-            <p className="text-sm text-muted-foreground tabular-nums">for {formatNim(props.amount, 5)}</p>
-          </div>
-          <dl className="flex flex-col gap-2.5 rounded-2xl bg-muted/60 p-4 text-sm">
-            <Row label="Rate" value={`1 NIM = ₦${rate.toFixed(4)}`} />
-            <Row label={`Fees (${props.feePercent}% + bank transfer)`} value={formatNgn(fee)} />
-            <Separator />
-            <Row label="To" value={props.accountName} />
-            <Row label="Bank" value={`${shortBankName(bank.name)} ••${props.accountNumber.slice(-4)}`} />
-          </dl>
-          <p className="flex gap-2 text-sm text-muted-foreground">
-            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
-            Your NIM goes to KhalkosPay's deposit address, then Paystack pays your bank. If the bank transfer fails, your NIM is refunded automatically.
-          </p>
-          {error && (
-            <Alert variant={error.startsWith('Payment cancelled') ? 'default' : 'destructive'}>
-              <CircleAlert />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+      <div className="flex flex-col gap-4 overflow-y-auto px-4 py-4">
+        <div>
+          <p className="text-sm text-muted-foreground">You receive</p>
+          <p className="text-3xl font-semibold tracking-tight tabular-nums">{formatNgn(payout)}</p>
+          <p className="text-sm text-muted-foreground tabular-nums">for {formatNim(props.amount, 5)}</p>
         </div>
+        <dl className="flex flex-col gap-2.5 rounded-2xl bg-muted/60 p-4 text-sm">
+          <Row label="Rate" value={`1 NIM = ₦${rate.toFixed(4)}`} />
+          <Row label={`Fees (${props.feePercent}% + bank transfer)`} value={formatNgn(fee)} />
+          <Separator />
+          <Row label="To" value={props.accountName} />
+          <Row label="Bank" value={`${shortBankName(bank.name)} ••${props.accountNumber.slice(-4)}`} />
+        </dl>
+        <p className="flex gap-2 text-sm text-muted-foreground">
+          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
+          Your NIM goes to KhalkosPay's deposit address, then Paystack pays your bank. If the bank transfer fails, your NIM is refunded automatically.
+        </p>
+        {error && (
+          <Alert variant={error.startsWith('Payment cancelled') ? 'default' : 'destructive'}>
+            <CircleAlert />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+      </div>
 
-        <DrawerFooter className="pb-[max(env(safe-area-inset-bottom),1rem)]">
-          <Button size="xl" onClick={() => void confirm()} disabled={phase !== 'idle'}>
-            {phase !== 'idle' && <Spinner data-icon="inline-start" />}
-            {PHASE_LABEL[phase]}
-          </Button>
-          <DrawerClose render={<Button size="xl" variant="ghost" disabled={phase !== 'idle'} />}>Edit details</DrawerClose>
-        </DrawerFooter>
-      </DrawerContent>
-    </Drawer>
+      <DrawerFooter className="pb-[max(env(safe-area-inset-bottom),1rem)]">
+        <Button size="xl" onClick={() => void confirm()} disabled={phase !== 'idle'}>
+          {phase !== 'idle' && <Spinner data-icon="inline-start" />}
+          {PHASE_LABEL[phase]}
+        </Button>
+        <DrawerClose render={<Button size="xl" variant="ghost" disabled={phase !== 'idle'} />}>Edit details</DrawerClose>
+      </DrawerFooter>
+    </DrawerContent>
   )
 }
 
