@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OfframpStatus {
+  AWAITING_DEPOSIT
+  CONFIRMING
+  PAYING_OUT
+  COMPLETED
+  PAYOUT_FAILED
+  REFUNDING
+  REFUNDED
+  REJECTED
+  EXPIRED
+}
+
+enum LedgerKind {
+  DEPOSIT
+  PAYOUT
+  REFUND
+}
+
+model OfframpOrder {
+  id                    String        @id @default(uuid())
+  reference             String        @unique
+  source                String        @default("app")
+  userAddress           String
+  nimLuna               BigInt
+  rateNgnPerNim         Decimal       @db.Decimal(24, 8)
+  grossKobo             BigInt
+  feeKobo               BigInt
+  payoutKobo            BigInt
+  bankCode              String
+  bankName              String
+  accountNumber         String
+  accountName           String
+  status                OfframpStatus @default(AWAITING_DEPOSIT)
+  depositTxHash         String?       @unique
+  depositSubmittedAt    DateTime?
+  depositConfirmedAt    DateTime?
+  depositFrom           String?
+  receivedLuna          BigInt?
+  paystackRecipientCode String?
+  paystackTransferCode  String?
+  paidAt                DateTime?
+  refundTxHash          String?
+  refundTxHex           String?
+  refundSentAt          DateTime?
+  failureReason         String?
+  expiresAt             DateTime
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  ledger                LedgerEntry[]
+
+  @@index([userAddress, createdAt])
+  @@index([status])
+}
+
+model LedgerEntry {
+  id          String       @id @default(uuid())
+  orderId     String
+  order       OfframpOrder @relation(fields: [orderId], references: [id])
+  kind        LedgerKind
+  asset       String
+  amount      BigInt
+  debit       String
+  credit      String
+  externalRef String
+  createdAt   DateTime     @default(now())
+
+  @@unique([orderId, kind])
+}
+
+model GiftCard {
+  id             String    @id @default(uuid())
+  amount         Float
+  message        String    @default("")
+  redeemCode     String
+  template       String    @default("default")
+  senderAddress  String?
+  recipientEmail String?
+  anonymous      Boolean   @default(false)
+  claimed        Boolean   @default(false)
+  claimedAt      DateTime?
+  claimerAddress String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model MealLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  mealType  String
+  name      String
+  score     Int
+  calories  Float
+  protein   Float
+  carbs     Float
+  fat       Float
+  fiber     Float
+  createdAt DateTime @default(now())
+}
