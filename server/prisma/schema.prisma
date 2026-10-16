@@ -19,6 +19,35 @@ enum OfframpStatus {
   EXPIRED
 }
 
+enum GiftCardStatus {
+  AWAITING_FUNDING
+  ACTIVE
+  CLAIMING
+  CLAIMED
+  EXPIRED
+  REFUNDING
+  REFUNDED
+}
+
+enum PetStatus {
+  ALIVE
+  DEAD
+}
+
+enum MealSlot {
+  BREAKFAST
+  LUNCH
+  DINNER
+}
+
+enum PetRevivalStatus {
+  AWAITING_PAYMENT
+  PAID
+  EXPIRED
+  REFUNDING
+  REFUNDED
+}
+
 enum LedgerKind {
   DEPOSIT
   PAYOUT
@@ -62,34 +91,129 @@ model OfframpOrder {
 }
 
 model LedgerEntry {
-  id          String       @id @default(uuid())
-  orderId     String
-  order       OfframpOrder @relation(fields: [orderId], references: [id])
+  id          String        @id @default(uuid())
+  orderId     String?
+  order       OfframpOrder? @relation(fields: [orderId], references: [id])
+  giftCardId  String?
+  giftCard    GiftCard?     @relation(fields: [giftCardId], references: [id])
+  revivalId   String?
+  revival     PetRevival?   @relation(fields: [revivalId], references: [id])
   kind        LedgerKind
   asset       String
   amount      BigInt
   debit       String
   credit      String
   externalRef String
-  createdAt   DateTime     @default(now())
+  createdAt   DateTime      @default(now())
 
   @@unique([orderId, kind])
+  @@unique([giftCardId, kind])
+  @@unique([revivalId, kind])
 }
 
 model GiftCard {
-  id             String    @id @default(uuid())
-  amount         Float
-  message        String    @default("")
-  redeemCode     String
-  template       String    @default("default")
-  senderAddress  String?
-  recipientEmail String?
-  anonymous      Boolean   @default(false)
-  claimed        Boolean   @default(false)
-  claimedAt      DateTime?
-  claimerAddress String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                 String         @id @default(uuid())
+  reference          String         @unique
+  amountLuna         BigInt
+  message            String         @default("")
+  redeemCodeHash     String
+  template           String         @default("default")
+  senderAddress      String
+  recipientEmail     String?
+  anonymous          Boolean        @default(false)
+  status             GiftCardStatus @default(AWAITING_FUNDING)
+  fundingTxHash      String?        @unique
+  fundingSubmittedAt DateTime?
+  fundedAt           DateTime?
+  fundedFrom         String?
+  receivedLuna       BigInt?
+  claimerAddress     String?
+  claimTxHash        String?        @unique
+  claimTxHex         String?
+  claimSentAt        DateTime?
+  claimedAt          DateTime?
+  refundTxHash       String?
+  refundTxHex        String?
+  refundSentAt       DateTime?
+  failureReason      String?
+  expiresAt          DateTime
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  ledger             LedgerEntry[]
+
+  @@index([senderAddress, createdAt])
+  @@index([status])
+}
+
+model Pet {
+  id            String       @id @default(uuid())
+  ownerAddress  String       @unique
+  species       String
+  name          String
+  timezone      String
+  strength      Int          @default(70)
+  xp            Int          @default(0)
+  status        PetStatus    @default(ALIVE)
+  /// Meal windows that opened before this moment never count as missed (adoption or last revive).
+  aliveSince    DateTime     @default(now())
+  /// Every meal window that closed before this moment has been scored.
+  settledUntil  DateTime     @default(now())
+  diedAt        DateTime?
+  deathReason   String?
+  lastStandUsed Boolean      @default(false)
+  revivals      Int          @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  meals         PetMeal[]
+  revivalOrders PetRevival[]
+}
+
+model PetMeal {
+  id            String   @id @default(uuid())
+  petId         String
+  pet           Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
+  /// Local calendar day in the pet's timezone, YYYY-MM-DD.
+  day           String
+  slot          MealSlot
+  fed           Boolean
+  name          String?
+  score         Int?
+  calories      Float?
+  protein       Float?
+  carbs         Float?
+  fat           Float?
+  fiber         Float?
+  strengthDelta Int
+  xpDelta       Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@unique([petId, day, slot])
+  @@index([petId, createdAt])
+}
+
+model PetRevival {
+  id            String           @id @default(uuid())
+  petId         String
+  pet           Pet              @relation(fields: [petId], references: [id], onDelete: Cascade)
+  reference     String           @unique
+  priceLuna     BigInt
+  status        PetRevivalStatus @default(AWAITING_PAYMENT)
+  txHash        String?          @unique
+  txSubmittedAt DateTime?
+  paidAt        DateTime?
+  payer         String?
+  receivedLuna  BigInt?
+  refundTxHash  String?
+  refundTxHex   String?
+  refundSentAt  DateTime?
+  failureReason String?
+  expiresAt     DateTime
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  ledger        LedgerEntry[]
+
+  @@index([petId, createdAt])
+  @@index([status])
 }
 
 model MealLog {

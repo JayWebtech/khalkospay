@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { BottomNav } from '@/components/bottom-nav'
+import { flushPendingFunding } from '@/lib/gifts'
 import { flushPendingDeposits } from '@/lib/offramp'
 import { useWallet } from '@/lib/wallet'
 import { BiteBuddyPage } from '@/pages/bitebuddy'
@@ -20,6 +21,7 @@ export function App() {
   useEffect(() => {
     void detect()
     void flushPendingDeposits()
+    void flushPendingFunding()
   }, [detect])
 
   useEffect(() => {

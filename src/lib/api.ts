@@ -110,3 +110,33 @@ export interface OfframpConfig {
   feePercent: number
   quoteTtlSeconds: number
 }
+
+export type GiftStatus = 'AWAITING_FUNDING' | 'ACTIVE' | 'CLAIMING' | 'CLAIMED' | 'EXPIRED' | 'REFUNDING' | 'REFUNDED'
+
+export interface GiftCard {
+  id: string
+  status: GiftStatus
+  nimAmount: string
+  message: string
+  template: string
+  senderAddress: string | null
+  network: 'mainnet' | 'testnet'
+  confirming: boolean
+  funding: { recipient: string; valueLuna: number; data: string } | null
+  fundingTxHash: string | null
+  claimerAddress: string | null
+  claimTxHash: string | null
+  refundTxHash: string | null
+  failureReason: string | null
+  expiresAt: string
+  createdAt: string
+  fundedAt: string | null
+  claimedAt: string | null
+}
+
+export interface GiftConfig {
+  enabled: boolean
+  network: 'mainnet' | 'testnet'
+  minCodeLength: number
+  fundingTtlSeconds: number
+}

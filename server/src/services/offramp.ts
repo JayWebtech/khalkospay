@@ -4,6 +4,7 @@ import { LedgerEntry, LedgerKind, OfframpOrder, OfframpStatus, Prisma } from '@p
 import { config } from '../config'
 import { HttpError } from '../lib/http-error'
 import { prisma } from '../lib/prisma'
+import { attachScannedFunding, GIFT_REFERENCE_PREFIX } from './giftcards'
 import {
   broadcastTransaction,
   buildTreasuryTransaction,
@@ -424,7 +425,7 @@ async function advanceRefund(order: OfframpOrder) {
 
 /**
  * Safety net for deposits the app never reported (closed mid-flow, network drop):
- * any treasury payment whose memo matches an open order gets attached to it.
+ * any treasury payment whose memo matches an open order or unfunded gift gets attached to it.
  */
 async function scanTreasuryDeposits() {
   if (!treasuryAddress || throttled('scan:treasury', 15_000)) return
@@ -432,6 +433,10 @@ async function scanTreasuryDeposits() {
     (tx) => tx.to === treasuryAddress && tx.data.startsWith('khalkos-'),
   )
   for (const tx of incoming) {
+    if (tx.data.trim().startsWith(GIFT_REFERENCE_PREFIX)) {
+      await attachScannedFunding(tx)
+      continue
+    }
     const order = await prisma.offrampOrder.findUnique({ where: { reference: tx.data.trim() } })
     if (!order || order.depositTxHash || !DEPOSIT_ATTACHABLE.includes(order.status)) continue
     if (await prisma.offrampOrder.findUnique({ where: { depositTxHash: tx.hash } })) continue

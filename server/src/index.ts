@@ -7,6 +7,7 @@ import { biteBuddyRouter } from './routes/bitebuddy'
 import { giftCardsRouter } from './routes/giftcards'
 import { offrampRouter } from './routes/offramp'
 import { webhooksRouter } from './routes/webhooks'
+import { startGiftCardWorker } from './services/giftcards'
 import { canSendFromTreasury, treasuryAddress } from './services/nimiq'
 import { startOfframpWorker } from './services/offramp'
 import { PaystackError } from './services/paystack'
@@ -59,3 +60,4 @@ server.listen(config.port, () => {
 })
 
 startOfframpWorker()
+startGiftCardWorker()

@@ -33,6 +33,12 @@ export const config = {
     depositLookupTimeoutSeconds: num('OFFRAMP_DEPOSIT_LOOKUP_TIMEOUT_SECONDS', 1800),
     rateOverride: process.env.RATE_OVERRIDE_NGN_PER_NIM || '',
   },
+  gifts: {
+    fundingTtlSeconds: num('GIFT_FUNDING_TTL_SECONDS', 3600),
+    fundingLookupTimeoutSeconds: num('GIFT_FUNDING_LOOKUP_TIMEOUT_SECONDS', 1800),
+    claimAttemptsPerCard: num('GIFT_CLAIM_ATTEMPTS_PER_CARD', 10),
+    claimAttemptsPerIp: num('GIFT_CLAIM_ATTEMPTS_PER_IP', 30),
+  },
   paystackSecretKey: process.env.PAYSTACK_SECRET_KEY || '',
   paystackBaseUrl: process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co',
   deepgramApiKey: process.env.DEEPGRAM_API_KEY || '',
