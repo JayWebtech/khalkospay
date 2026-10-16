@@ -121,7 +121,13 @@ model GiftCard {
   redeemCodeHash     String
   template           String         @default("default")
   senderAddress      String
+  /// Shown to the recipient; null for anonymous gifts.
+  senderName         String?
   recipientEmail     String?
+  /// Set once Resend accepted the "you got a gift" email; it's sent after the gift is funded.
+  emailSentAt        DateTime?
+  emailAttempts      Int            @default(0)
+  emailError         String?
   anonymous          Boolean        @default(false)
   status             GiftCardStatus @default(AWAITING_FUNDING)
   fundingTxHash      String?        @unique

@@ -60,6 +60,7 @@ server.listen(config.port, () => {
   console.log(`  Nimiq ${config.nimiq.network} via ${config.nimiq.rpcUrl || '(no RPC configured)'}`)
   console.log(`  Deposit address: ${treasuryAddress ?? 'NOT CONFIGURED'}${canSendFromTreasury ? ' (refunds automatic)' : ' (refunds manual)'}`)
   console.log(`  Paystack: ${config.paystackSecretKey ? 'configured' : 'NOT CONFIGURED'} · Deepgram: ${config.deepgramApiKey ? 'configured' : 'NOT CONFIGURED'}`)
+  console.log(`  Gift emails: ${config.resend.apiKey && config.resend.from ? `via Resend from ${config.resend.from}` : 'NOT CONFIGURED'}${config.miniAppUrl ? '' : ' · MINIAPP_URL not set, so emails carry the gift code but no link'}`)
 })
 
 startOfframpWorker()

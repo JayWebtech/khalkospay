@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, CircleX, Clock, Link2, LoaderCircle, Share2, TimerOff, Undo2, Wallet, type LucideIcon } from 'lucide-react'
+import { CircleAlert, CircleCheck, CircleX, Clock, Copy, Link2, LoaderCircle, Mail, Share2, Ticket, TimerOff, Undo2, Wallet, type LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { ButtonLink } from '@/components/button-link'
@@ -12,7 +12,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import type { GiftCard } from '@/lib/api'
 import { formatNim } from '@/lib/format'
-import { hasPendingFunding, reclaimGift, reportFunding, useGiftCard } from '@/lib/gifts'
+import { copyText } from '@/lib/clipboard'
+import { giftMiniAppLink, giftShareText, hasPendingFunding, reclaimGift, reportFunding, useGiftCard } from '@/lib/gifts'
 import { cn } from '@/lib/utils'
 import { useWalletSession } from '@/lib/wallet-session'
 import { errorMessage, isUserRejection, useWallet } from '@/lib/wallet'
@@ -108,7 +109,6 @@ function senderStatus(card: GiftCard): SenderStatus {
 export function SentGiftPage() {
   const { id } = useParams<{ id: string }>()
   const { card, error, update } = useGiftCard(id)
-  const link = `${location.origin}/gift/${id}`
   const status = card ? senderStatus(card) : null
   const Icon = status?.icon
   const canPay = card?.status === 'AWAITING_FUNDING' && card.funding && !card.confirming && !hasPendingFunding(card.id)
@@ -117,7 +117,7 @@ export function SentGiftPage() {
     <div className="flex flex-1 flex-col">
       <PageHeader title="Your gift" back="/gifts" />
       <div className="flex flex-col gap-4 px-4 pt-2 pb-6">
-        {card ? <GiftCardArt template={card.template} amount={card.nimAmount} message={card.message} /> : !error && <Skeleton className="aspect-[1.6] rounded-3xl" />}
+        {card ? <GiftCardArt template={card.template} amount={card.nimAmount} message={card.message} from={card.senderName ?? undefined} /> : !error && <Skeleton className="aspect-[1.6] rounded-3xl" />}
 
         {!card && error && (
           <Alert variant="destructive">
@@ -137,21 +137,32 @@ export function SentGiftPage() {
           </section>
         )}
 
-        {status?.shareable && (
-          <>
-            <p className="text-sm text-muted-foreground">Share the link, then tell them the secret code separately. Anyone with both can claim the gift.</p>
-            <div className="flex items-center gap-2 rounded-2xl bg-muted/60 py-1 pr-1 pl-4">
-              <Link2 className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-              <span className="min-w-0 flex-1 truncate font-mono text-sm">{link}</span>
-              <CopyButton value={link} label="Copy gift link" />
+        {card && status?.shareable && (
+          <section className="flex flex-col gap-3" aria-labelledby="share-heading">
+            <div>
+              <h2 id="share-heading" className="text-sm font-semibold">
+                Send it to them
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                The link opens the gift in Nimiq Pay. Send the secret code separately: anyone with both can claim it.
+              </p>
             </div>
-            {typeof navigator.share === 'function' && (
-              <Button size="xl" onClick={() => void navigator.share({ title: 'A KhalkosPay gift for you', url: link }).catch(() => {})}>
-                <Share2 data-icon="inline-start" />
-                Share link
-              </Button>
+            <ShareRow icon={Link2} label="Mini app link" value={giftMiniAppLink(card)} />
+            {card.shareCode && <ShareRow icon={Ticket} label="Gift code" value={card.shareCode} />}
+            <ShareButton card={card} />
+            {card.email && (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+                <Mail className="size-4 shrink-0" aria-hidden="true" />
+                {card.email === 'sent'
+                  ? 'We emailed them the gift link and code.'
+                  : card.email === 'failed'
+                    ? "We couldn't email them, so share the link yourself."
+                    : card.status === 'ACTIVE'
+                      ? 'Sending them an email with the gift link…'
+                      : "We'll email them the gift link once your payment confirms."}
+              </p>
             )}
-          </>
+          </section>
         )}
 
         {card?.status === 'ACTIVE' && <TakeBack card={card} onDone={update} />}
@@ -259,5 +270,52 @@ function TakeBack({ card, onDone }: { card: GiftCard; onDone: (card: GiftCard) =
         </DrawerFooter>
       </DrawerContent>
     </Drawer>
+  )
+}
+
+function ShareRow({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl bg-muted/60 py-1 pr-1 pl-4">
+      <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        {/* select-all lets a long-press grab the whole value where copying isn't allowed */}
+        <p className="truncate font-mono text-sm select-all">{value}</p>
+      </div>
+      <CopyButton value={value} label={`Copy ${label.toLowerCase()}`} />
+    </div>
+  )
+}
+
+/** Uses the share sheet where the WebView has one; otherwise copies the whole message, link and code included. */
+function ShareButton({ card }: { card: GiftCard }) {
+  const [note, setNote] = useState<string | null>(null)
+  const text = giftShareText(card)
+
+  async function share() {
+    setNote(null)
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: 'A KhalkosPay gift for you', text })
+        return
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') return
+      }
+    }
+    setNote((await copyText(text)) ? 'Message copied. Paste it into any chat.' : "Couldn't copy here. Press and hold the link and code above to copy them.")
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Button size="xl" onClick={() => void share()}>
+        {typeof navigator.share === 'function' ? <Share2 data-icon="inline-start" /> : <Copy data-icon="inline-start" />}
+        {typeof navigator.share === 'function' ? 'Share gift' : 'Copy message to share'}
+      </Button>
+      {note && (
+        <p className="text-center text-sm text-muted-foreground" role="status">
+          {note}
+        </p>
+      )}
+    </div>
   )
 }

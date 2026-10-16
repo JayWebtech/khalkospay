@@ -47,11 +47,11 @@ giftCardsRouter.get('/config', (_req, res) => {
 })
 
 giftCardsRouter.post('/', createLimit, async (req, res) => {
-  const { senderAddress, nimAmount, redeemCode, message, template, recipientEmail, anonymous } = req.body ?? {}
+  const { senderAddress, nimAmount, redeemCode, message, template, recipientEmail, anonymous, senderName } = req.body ?? {}
   if (!senderAddress || !nimAmount || !redeemCode) {
     throw new HttpError(400, 'senderAddress, nimAmount and redeemCode are required', 'INVALID_REQUEST')
   }
-  const card = await createCard({ senderAddress, nimAmount, redeemCode, message, template, recipientEmail, anonymous })
+  const card = await createCard({ senderAddress, nimAmount, redeemCode, message, template, recipientEmail, anonymous, senderName })
   res.status(201).json(cardDto(card))
 })
 

@@ -1,6 +1,6 @@
-import { ChevronRight, CircleAlert, Gift, KeyRound, Plus } from 'lucide-react'
+import { ChevronRight, CircleAlert, Gift, KeyRound, PackageOpen, Plus } from 'lucide-react'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ButtonLink } from '@/components/button-link'
 import { PageHeader } from '@/components/page-header'
 import { WalletNotice } from '@/components/wallet-notice'
@@ -8,12 +8,14 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import type { SentGift } from '@/lib/api'
 import { formatNim, timeAgo } from '@/lib/format'
 import { giftTemplate } from '@/lib/gift-templates'
-import { useMyGifts } from '@/lib/gifts'
+import { giftKeyFrom, useMyGifts } from '@/lib/gifts'
 import { useSessionFor, useWalletSession } from '@/lib/wallet-session'
 import { errorMessage, isUserRejection, useWallet } from '@/lib/wallet'
 
@@ -56,6 +58,7 @@ export function GiftCardsPage() {
         }
       />
       <div className="flex flex-1 flex-col gap-4 px-4 pt-2 pb-6">
+        <RedeemBox />
         <WalletNotice purpose="seeing the gifts you've sent" />
         {wallet.status === 'connected' && !session && <SignInCard />}
 
@@ -164,5 +167,59 @@ function SentGiftRow({ gift }: { gift: SentGift }) {
       </Badge>
       <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
     </Link>
+  )
+}
+
+/** Recipients redeem inside the app: paste the link or type the 8-character gift code from the sender. */
+function RedeemBox() {
+  const navigate = useNavigate()
+  const [value, setValue] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  return (
+    <form
+      className="flex flex-col gap-3 rounded-3xl bg-card p-5 ring-1 ring-foreground/10"
+      aria-labelledby="redeem-heading"
+      onSubmit={(e) => {
+        e.preventDefault()
+        const key = giftKeyFrom(value)
+        if (!key) {
+          setError('Enter the 8-character gift code, like K7QM-3XPD, or paste the gift link.')
+          return
+        }
+        navigate(`/gift/${key}`)
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <PackageOpen className="size-5 text-primary" aria-hidden="true" />
+        <h2 id="redeem-heading" className="font-semibold">
+          Got a gift?
+        </h2>
+      </div>
+      <Field data-invalid={error ? true : undefined}>
+        <FieldLabel htmlFor="gift-key" className="sr-only">
+          Gift code or link
+        </FieldLabel>
+        <Input
+          id="gift-key"
+          autoComplete="off"
+          autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
+          placeholder="Gift code or link"
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value)
+            setError(null)
+          }}
+          aria-invalid={error ? true : undefined}
+          className="font-mono"
+        />
+        {error ? <FieldError>{error}</FieldError> : <FieldDescription>You'll enter the secret code on the next screen.</FieldDescription>}
+      </Field>
+      <Button type="submit" size="xl" disabled={!value.trim()}>
+        Open gift
+      </Button>
+    </form>
   )
 }

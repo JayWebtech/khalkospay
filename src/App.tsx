@@ -19,7 +19,6 @@ import { VoiceOfframpPage } from '@/pages/voice-offramp'
 export function App() {
   const detect = useWallet((s) => s.detect)
   const { pathname } = useLocation()
-  const standalone = pathname.startsWith('/gift/')
 
   useEffect(() => startBalanceRefresh(), [])
 
@@ -36,7 +35,7 @@ export function App() {
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col">
-      <main className={standalone ? 'flex flex-1 flex-col' : 'flex flex-1 flex-col pb-[calc(4rem+env(safe-area-inset-bottom))]'}>
+      <main className="flex flex-1 flex-col pb-[calc(4rem+env(safe-area-inset-bottom))]">
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/cash-out" element={<OfframpPage />} />
@@ -53,8 +52,8 @@ export function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-      {!standalone && <BottomNav />}
-      {!standalone && <MealReminders />}
+      <BottomNav />
+      <MealReminders />
     </div>
   )
 }

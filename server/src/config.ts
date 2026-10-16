@@ -45,6 +45,13 @@ export const config = {
     revivePaymentLookupTimeoutSeconds: num('PET_REVIVE_LOOKUP_TIMEOUT_SECONDS', 1800),
   },
   authSecret: process.env.AUTH_SECRET || '',
+  /** Public host of the mini app (e.g. khalkospay.app), used to build Nimiq Pay links in emails. */
+  miniAppUrl: (process.env.MINIAPP_URL || '').replace(/^https?:\/\//, '').replace(/\/+$/, ''),
+  resend: {
+    apiKey: process.env.RESEND_API_KEY || '',
+    from: process.env.RESEND_FROM || '',
+    baseUrl: process.env.RESEND_BASE_URL || 'https://api.resend.com',
+  },
   paystackSecretKey: process.env.PAYSTACK_SECRET_KEY || '',
   paystackBaseUrl: process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co',
   deepgramApiKey: process.env.DEEPGRAM_API_KEY || '',

@@ -30,6 +30,24 @@ const PHASE_LABEL: Record<Phase, string> = {
 
 const CANCELLED = 'Payment cancelled. Nothing left your wallet.'
 
+const NAME_KEY = 'khalkospay.senderName'
+
+function readSavedName() {
+  try {
+    return localStorage.getItem(NAME_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function saveName(name: string) {
+  try {
+    localStorage.setItem(NAME_KEY, name)
+  } catch {
+    // Remembering the name is only a convenience.
+  }
+}
+
 export function GiftCardCreatePage() {
   const wallet = useWallet()
   const { data: config, error: configError } = useGiftConfig()
@@ -39,13 +57,14 @@ export function GiftCardCreatePage() {
   const [message, setMessage] = useState('')
   const [email, setEmail] = useState('')
   const [anonymous, setAnonymous] = useState(false)
+  const [senderName, setSenderName] = useState(readSavedName)
   const [phase, setPhase] = useState<Phase>('idle')
   const [error, setError] = useState<string | null>(null)
   const [lockedCard, setLockedCard] = useState<GiftCard | null>(null)
   const navigate = useNavigate()
 
   // Editing after a cancelled payment creates a fresh card; the unpaid one simply expires.
-  useEffect(() => setLockedCard(null), [template, amount, code, message, email, anonymous])
+  useEffect(() => setLockedCard(null), [template, amount, code, message, email, anonymous, senderName])
 
   const minCodeLength = config?.minCodeLength ?? 6
   const balanceNim = wallet.balanceLuna === null ? null : lunaToNim(wallet.balanceLuna)
@@ -55,6 +74,7 @@ export function GiftCardCreatePage() {
     Number(amount) > 0 &&
     !overBalance &&
     code.trim().length >= minCodeLength &&
+    (anonymous || senderName.trim().length > 0) &&
     wallet.status === 'connected' &&
     Boolean(config?.enabled) &&
     !networkMismatch
@@ -72,9 +92,11 @@ export function GiftCardCreatePage() {
           redeemCode: code.trim(),
           message,
           template,
-          recipientEmail: email || undefined,
+          recipientEmail: email.trim() || undefined,
           anonymous,
+          senderName: anonymous ? undefined : senderName.trim(),
         })
+        if (!anonymous) saveName(senderName.trim())
         setLockedCard(card)
       }
       if (!card.funding) throw new Error('This gift is no longer waiting for payment')
@@ -113,7 +135,7 @@ export function GiftCardCreatePage() {
           </Alert>
         )}
 
-        <GiftCardArt template={template} amount={amount} message={message} />
+        <GiftCardArt template={template} amount={amount} message={message} from={anonymous ? undefined : senderName.trim() || undefined} />
 
         <ToggleGroup
           value={[template]}
@@ -175,16 +197,30 @@ export function GiftCardCreatePage() {
             <FieldLabel htmlFor="gift-message">Message</FieldLabel>
             <Textarea id="gift-message" placeholder="Happy birthday!" rows={2} maxLength={140} value={message} onChange={(e) => setMessage(e.target.value)} />
           </Field>
-          <Field>
-            <FieldLabel htmlFor="gift-email">Recipient email (optional)</FieldLabel>
-            <Input id="gift-email" type="email" inputMode="email" placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </Field>
           <Field orientation="horizontal" className="min-h-11">
             <FieldContent>
               <FieldLabel htmlFor="gift-anon">Send anonymously</FieldLabel>
-              <FieldDescription>Hide your wallet address from the recipient.</FieldDescription>
+              <FieldDescription>They won't see your name or wallet address.</FieldDescription>
             </FieldContent>
             <Switch id="gift-anon" checked={anonymous} onCheckedChange={setAnonymous} />
+          </Field>
+          {!anonymous && (
+            <Field>
+              <FieldLabel htmlFor="gift-sender-name">Your name</FieldLabel>
+              <Input
+                id="gift-sender-name"
+                autoComplete="name"
+                maxLength={40}
+                placeholder="So they know who it's from"
+                value={senderName}
+                onChange={(e) => setSenderName(e.target.value)}
+              />
+            </Field>
+          )}
+          <Field>
+            <FieldLabel htmlFor="gift-email">Recipient email (optional)</FieldLabel>
+            <Input id="gift-email" type="email" inputMode="email" autoComplete="off" placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <FieldDescription>We'll email them the gift link once your payment confirms. Never the secret code.</FieldDescription>
           </Field>
         </FieldGroup>
 

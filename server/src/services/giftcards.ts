@@ -3,6 +3,8 @@ import { GiftCard, GiftCardStatus, LedgerKind, Prisma } from '@prisma/client'
 import { config } from '../config'
 import { HttpError } from '../lib/http-error'
 import { prisma } from '../lib/prisma'
+import { EmailError, emailConfigured, sendEmail } from './email'
+import { giftEmail } from './gift-email'
 import {
   broadcastTransaction,
   buildTreasuryTransaction,
@@ -22,6 +24,8 @@ export const MIN_CODE_LENGTH = 6
 
 const MAX_CODE_LENGTH = 64
 const MAX_MESSAGE_LENGTH = 140
+const MAX_NAME_LENGTH = 40
+const MAX_EMAIL_ATTEMPTS = 5
 const SIGNED_TX_VALIDITY_MS = 150 * 60_000
 const SCRYPT = { N: 16_384, r: 8, p: 1, keyLength: 32 }
 
@@ -86,6 +90,7 @@ export async function createCard(input: {
   template?: unknown
   recipientEmail?: unknown
   anonymous?: unknown
+  senderName?: unknown
 }): Promise<GiftCard> {
   requireEscrow()
   let senderAddress: string
@@ -112,9 +117,13 @@ export async function createCard(input: {
   const template = optionalString(input.template, 'template', 32) ?? 'default'
   if (!/^[a-z0-9_-]+$/.test(template)) throw new HttpError(400, 'Unknown gift design', 'INVALID_REQUEST')
   const recipientEmail = optionalString(input.recipientEmail, 'recipientEmail', 254)
-  if (recipientEmail && !/^[^\s@]+@[^\s@]+$/.test(recipientEmail)) {
+  if (recipientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
     throw new HttpError(400, 'Recipient email looks invalid', 'INVALID_REQUEST')
   }
+  // Anonymous gifts never store a name, whatever the client sent.
+  const anonymous = input.anonymous === true
+  const senderName = anonymous ? null : (optionalString(input.senderName, 'Your name', MAX_NAME_LENGTH)?.replace(/\s+/g, ' ') ?? null)
+  if (!anonymous && !senderName) throw new HttpError(400, 'Add your name so they know who the gift is from', 'NAME_REQUIRED')
 
   const data = {
     reference: `${GIFT_REFERENCE_PREFIX}${randomBytes(8).toString('hex')}`,
@@ -123,8 +132,9 @@ export async function createCard(input: {
     redeemCodeHash: await hashRedeemCode(code),
     template,
     senderAddress,
+    senderName,
     recipientEmail,
-    anonymous: input.anonymous === true,
+    anonymous,
     expiresAt: new Date(Date.now() + config.gifts.fundingTtlSeconds * 1000),
   }
   for (let attempt = 0; ; attempt++) {
@@ -335,6 +345,8 @@ export async function processCard(id: string) {
       case 'AWAITING_FUNDING':
         if (card.fundingTxHash) await confirmFunding(card)
         return
+      case 'ACTIVE':
+        return await emailRecipient(card)
       case 'CLAIMING':
         return await advancePayout(card, 'claim')
       case 'REFUNDING':
@@ -377,6 +389,33 @@ async function confirmFunding(card: GiftCard) {
     { fundingTxHash: hash },
   )
   if (updated?.status === 'REFUNDING') await advancePayout(updated, 'refund')
+  if (updated?.status === 'ACTIVE') await emailRecipient(updated)
+}
+
+/**
+ * Emails the recipient once the gift is funded (an unfunded gift can't be claimed yet). Each attempt is
+ * reserved with a conditional update and Resend's idempotency key, so a recipient never gets two copies;
+ * failures back off a minute per attempt, and rejections such as an unverified sender aren't retried.
+ */
+async function emailRecipient(card: GiftCard) {
+  if (card.status !== 'ACTIVE' || !card.recipientEmail || card.emailSentAt || card.emailAttempts >= MAX_EMAIL_ATTEMPTS || !emailConfigured()) return
+  if (throttled(`email:${card.id}`, 60_000 * card.emailAttempts)) return
+  const reserved = await prisma.giftCard.updateMany({
+    where: { id: card.id, emailSentAt: null, emailAttempts: card.emailAttempts },
+    data: { emailAttempts: { increment: 1 } },
+  })
+  if (reserved.count === 0) return
+  try {
+    await sendEmail(giftEmail(card, card.shareCode ? formatShareCode(card.shareCode) : null))
+    await prisma.giftCard.update({ where: { id: card.id }, data: { emailSentAt: new Date(), emailError: null } })
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    console.error(`[gifts] email for ${card.id} failed:`, message)
+    await prisma.giftCard.update({
+      where: { id: card.id },
+      data: { emailError: message.slice(0, 300), ...(e instanceof EmailError && e.isDefinitive ? { emailAttempts: MAX_EMAIL_ATTEMPTS } : {}) },
+    })
+  }
 }
 
 type PayoutLeg = 'claim' | 'refund'
@@ -470,6 +509,9 @@ export function startGiftCardWorker(intervalMs = 5_000) {
       })
       const work: Prisma.GiftCardWhereInput[] = [{ status: 'AWAITING_FUNDING', fundingTxHash: { not: null } }]
       if (canSendFromTreasury) work.push({ status: { in: ['CLAIMING', 'REFUNDING'] } })
+      if (emailConfigured()) {
+        work.push({ status: 'ACTIVE', recipientEmail: { not: null }, emailSentAt: null, emailAttempts: { lt: MAX_EMAIL_ATTEMPTS } })
+      }
       const pending = await prisma.giftCard.findMany({
         where: { OR: work },
         select: { id: true },
@@ -508,6 +550,15 @@ export function cardDto(card: GiftCard) {
     message: card.message,
     template: card.template,
     senderAddress: card.anonymous ? null : (card.fundedFrom ?? card.senderAddress),
+    senderName: card.anonymous ? null : card.senderName,
+    // Whether the recipient was emailed, never the address itself.
+    email: !card.recipientEmail
+      ? null
+      : card.emailSentAt
+        ? ('sent' as const)
+        : card.emailAttempts >= MAX_EMAIL_ATTEMPTS
+          ? ('failed' as const)
+          : ('pending' as const),
     network: config.nimiq.network,
     confirming: card.status === 'AWAITING_FUNDING' && card.fundingTxHash !== null,
     funding:

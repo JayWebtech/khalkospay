@@ -44,7 +44,8 @@ export function useGiftCard(id: string | undefined) {
         if (!alive) return
         setCard(next)
         setError(null)
-        if (IN_FLIGHT.includes(next.status)) timer = setTimeout(load, 3_000)
+        // Also keep watching a funded gift until its recipient email goes out.
+        if (IN_FLIGHT.includes(next.status) || (next.status === 'ACTIVE' && next.email === 'pending')) timer = setTimeout(load, 3_000)
       } catch (e) {
         if (!alive) return
         setError(messageOf(e))
@@ -74,8 +75,42 @@ export function createGiftCard(input: {
   template: string
   recipientEmail?: string
   anonymous: boolean
+  senderName?: string
 }) {
   return api<GiftCard>('/api/giftcards', { json: input })
+}
+
+/** Where KhalkosPay is hosted, e.g. khalkospay.app. Nimiq Pay deep links name the mini app by domain. */
+const MINIAPP_HOST = ((import.meta.env.VITE_MINIAPP_URL as string | undefined) || location.host).replace(/^https?:\/\//, '').replace(/\/+$/, '')
+
+/** Opens the gift inside Nimiq Pay. If Nimiq Pay drops the path, the gift code still gets them there. */
+export function giftMiniAppLink(card: { id: string }) {
+  return `https://nimpay.app/miniapps/open/${MINIAPP_HOST}/gift/${card.id}`
+}
+
+export function giftShareText(card: { id: string; shareCode: string | null }) {
+  return [
+    'You got a KhalkosPay gift! Open it in Nimiq Pay:',
+    giftMiniAppLink(card),
+    ...(card.shareCode ? ['', `Or open KhalkosPay in Nimiq Pay, go to Gifts and enter gift code ${card.shareCode}.`] : []),
+    "I'll send you the secret code separately.",
+  ].join('\n')
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Turns a pasted gift link, mini-app link or typed gift code into the key the /gift/:key page understands. */
+export function giftKeyFrom(input: string): string | null {
+  const text = input.trim()
+  const fromLink = text.match(/\/gift\/([^/?#\s]+)/)?.[1]
+  const key = decodeURIComponent(fromLink ?? text)
+  if (UUID.test(key)) return key.toLowerCase()
+  const code = key.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  return code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : null
+}
+
+export function isGiftId(key: string) {
+  return UUID.test(key)
 }
 
 export function claimGiftCard(id: string, input: { redeemCode: string; claimerAddress: string }) {

@@ -1,9 +1,9 @@
 import { CircleAlert, Clock, LoaderCircle, PartyPopper, TimerOff, Undo2, Wallet } from 'lucide-react'
-import { useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { BrandMark } from '@/components/brand-mark'
+import { useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { CopyButton } from '@/components/copy-button'
 import { GiftCardArt } from '@/components/gift-card-art'
+import { PageHeader } from '@/components/page-header'
 import { WalletNotice } from '@/components/wallet-notice'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -13,7 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { ApiError, type GiftCard } from '@/lib/api'
 import { formatNim, shortAddress, shortHash } from '@/lib/format'
-import { claimGiftCard, sameAddress, useGiftCard } from '@/lib/gifts'
+import { claimGiftCard, isGiftId, sameAddress, useGiftCard } from '@/lib/gifts'
 import { useWallet } from '@/lib/wallet'
 
 const TITLE: Record<GiftCard['status'], string> = {
@@ -28,16 +28,18 @@ const TITLE: Record<GiftCard['status'], string> = {
 
 export function GiftRedeemPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const { card, error, update } = useGiftCard(id)
 
-  return (
-    <div className="flex min-h-dvh flex-col px-4 pt-[max(env(safe-area-inset-top),1rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)]">
-      <header className="flex min-h-12 items-center gap-2">
-        <BrandMark />
-        <span className="text-lg font-semibold tracking-tight">KhalkosPay</span>
-      </header>
+  // Opened by gift code: once found, switch to the gift's id so polling doesn't count against code lookups.
+  useEffect(() => {
+    if (card && id && !isGiftId(id) && card.id !== id) navigate(`/gift/${card.id}`, { replace: true })
+  }, [card, id, navigate])
 
-      <main className="flex flex-1 flex-col justify-center gap-5">
+  return (
+    <div className="flex flex-1 flex-col">
+      <PageHeader title="Redeem gift" back="/gifts" />
+      <div className="flex flex-col gap-5 px-4 pt-2 pb-6">
         {!card && !error && <Skeleton className="aspect-[1.6] rounded-3xl" />}
 
         {!card && error && (
@@ -51,8 +53,10 @@ export function GiftRedeemPage() {
         {card && (
           <>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight">{TITLE[card.status]}</h1>
-              <p className="text-sm text-muted-foreground">{card.senderAddress ? `From ${shortAddress(card.senderAddress)}` : 'From someone who cares'}</p>
+              <h2 className="text-2xl font-semibold tracking-tight">{TITLE[card.status]}</h2>
+              <p className="text-sm text-muted-foreground">
+                {card.senderName ? `From ${card.senderName}` : card.senderAddress ? `From ${shortAddress(card.senderAddress)}` : 'From someone who cares'}
+              </p>
             </div>
             <GiftCardArt template={card.template} amount={card.nimAmount} message={card.message} />
             <div aria-live="polite" className="flex flex-col gap-3">
@@ -60,7 +64,7 @@ export function GiftRedeemPage() {
             </div>
           </>
         )}
-      </main>
+      </div>
     </div>
   )
 }

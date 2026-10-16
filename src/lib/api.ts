@@ -118,6 +118,12 @@ export type GiftStatus = 'AWAITING_FUNDING' | 'ACTIVE' | 'CLAIMING' | 'CLAIMED' 
 
 export interface GiftCard {
   id: string
+  /** Short code a recipient can type into the app, e.g. K7QM-3XPD. */
+  shareCode: string | null
+  /** Null for anonymous gifts. */
+  senderName: string | null
+  /** Whether the recipient was emailed the gift link; null when no email was given. */
+  email: 'sent' | 'pending' | 'failed' | null
   status: GiftStatus
   nimAmount: string
   message: string
