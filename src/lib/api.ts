@@ -140,3 +140,85 @@ export interface GiftConfig {
   minCodeLength: number
   fundingTtlSeconds: number
 }
+
+export type MealSlot = 'BREAKFAST' | 'LUNCH' | 'DINNER'
+export type PetMood = 'thriving' | 'happy' | 'hungry' | 'weak' | 'sleeping' | 'dead'
+
+export interface PetSpecies {
+  id: string
+  name: string
+  kind: string
+  title: string
+  description: string
+  ability: { name: string; description: string }
+  bestAt: string
+  watchOut: string
+  stats: { metabolism: number; toughness: number; growth: number }
+  missPenalty: Record<MealSlot, number>
+}
+
+export interface PetConfig {
+  network: 'mainnet' | 'testnet'
+  reviveEnabled: boolean
+  revivePriceNim: string
+  windows: { slot: MealSlot; startHour: number; endHour: number }[]
+  species: PetSpecies[]
+}
+
+export interface PetMeal {
+  id: string
+  day: string
+  slot: MealSlot
+  fed: boolean
+  name: string | null
+  score: number | null
+  strengthDelta: number
+  xpDelta: number
+  nutrients: { calories: number; protein: number; carbs: number; fat: number; fiber: number } | null
+  createdAt: string
+}
+
+export interface PetWindow {
+  slot: MealSlot
+  start: string
+  end: string
+  state: 'fed' | 'missed' | 'open' | 'upcoming' | 'skipped'
+  meal: PetMeal | null
+}
+
+export interface Pet {
+  id: string
+  name: string
+  species: string
+  status: 'ALIVE' | 'DEAD'
+  mood: PetMood
+  strength: number
+  xp: number
+  level: number
+  levelXp: number
+  levelSize: number
+  timezone: string
+  adoptedAt: string
+  aliveSince: string
+  diedAt: string | null
+  deathReason: string | null
+  revivals: number
+  lastStandAvailable: boolean
+  today: { day: string; windows: PetWindow[] }
+  current: { slot: MealSlot; closesAt: string } | null
+  next: { slot: MealSlot; opensAt: string }
+  recentMeals: PetMeal[]
+}
+
+export interface PetRevival {
+  id: string
+  status: 'AWAITING_PAYMENT' | 'PAID' | 'EXPIRED' | 'REFUNDING' | 'REFUNDED'
+  priceNim: string
+  receivedNim: string | null
+  confirming: boolean
+  payment: { recipient: string; valueLuna: number; data: string } | null
+  txHash: string | null
+  refundTxHash: string | null
+  failureReason: string | null
+  expiresAt: string
+}

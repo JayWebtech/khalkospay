@@ -1,8 +1,10 @@
 import { useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { BottomNav } from '@/components/bottom-nav'
+import { MealReminders } from '@/components/meal-reminders'
 import { flushPendingFunding } from '@/lib/gifts'
 import { flushPendingDeposits } from '@/lib/offramp'
+import { flushPendingRevivals } from '@/lib/pets'
 import { useWallet } from '@/lib/wallet'
 import { BiteBuddyPage } from '@/pages/bitebuddy'
 import { GiftRedeemPage } from '@/pages/gift-redeem'
@@ -22,6 +24,7 @@ export function App() {
     void detect()
     void flushPendingDeposits()
     void flushPendingFunding()
+    void flushPendingRevivals()
   }, [detect])
 
   useEffect(() => {
@@ -47,6 +50,7 @@ export function App() {
         </Routes>
       </main>
       {!standalone && <BottomNav />}
+      {!standalone && <MealReminders />}
     </div>
   )
 }

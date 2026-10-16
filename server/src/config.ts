@@ -39,6 +39,11 @@ export const config = {
     claimAttemptsPerCard: num('GIFT_CLAIM_ATTEMPTS_PER_CARD', 10),
     claimAttemptsPerIp: num('GIFT_CLAIM_ATTEMPTS_PER_IP', 30),
   },
+  pets: {
+    revivePriceNim: process.env.PET_REVIVE_NIM || '50',
+    revivePaymentTtlSeconds: num('PET_REVIVE_PAYMENT_TTL_SECONDS', 1800),
+    revivePaymentLookupTimeoutSeconds: num('PET_REVIVE_LOOKUP_TIMEOUT_SECONDS', 1800),
+  },
   paystackSecretKey: process.env.PAYSTACK_SECRET_KEY || '',
   paystackBaseUrl: process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co',
   deepgramApiKey: process.env.DEEPGRAM_API_KEY || '',

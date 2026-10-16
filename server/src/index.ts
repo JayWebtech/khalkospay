@@ -10,6 +10,7 @@ import { webhooksRouter } from './routes/webhooks'
 import { startGiftCardWorker } from './services/giftcards'
 import { canSendFromTreasury, treasuryAddress } from './services/nimiq'
 import { startOfframpWorker } from './services/offramp'
+import { startPetWorker } from './services/pets'
 import { PaystackError } from './services/paystack'
 import { attachVoiceServer } from './voice/session'
 
@@ -61,3 +62,4 @@ server.listen(config.port, () => {
 
 startOfframpWorker()
 startGiftCardWorker()
+startPetWorker()

@@ -5,6 +5,7 @@ import { config } from '../config'
 import { HttpError } from '../lib/http-error'
 import { prisma } from '../lib/prisma'
 import { attachScannedFunding, GIFT_REFERENCE_PREFIX } from './giftcards'
+import { attachScannedRevivalPayment, REVIVE_REFERENCE_PREFIX } from './pets'
 import {
   broadcastTransaction,
   buildTreasuryTransaction,
@@ -425,7 +426,7 @@ async function advanceRefund(order: OfframpOrder) {
 
 /**
  * Safety net for deposits the app never reported (closed mid-flow, network drop):
- * any treasury payment whose memo matches an open order or unfunded gift gets attached to it.
+ * any treasury payment whose memo matches an open order, unfunded gift or pending revive gets attached to it.
  */
 async function scanTreasuryDeposits() {
   if (!treasuryAddress || throttled('scan:treasury', 15_000)) return
@@ -435,6 +436,10 @@ async function scanTreasuryDeposits() {
   for (const tx of incoming) {
     if (tx.data.trim().startsWith(GIFT_REFERENCE_PREFIX)) {
       await attachScannedFunding(tx)
+      continue
+    }
+    if (tx.data.trim().startsWith(REVIVE_REFERENCE_PREFIX)) {
+      await attachScannedRevivalPayment(tx)
       continue
     }
     const order = await prisma.offrampOrder.findUnique({ where: { reference: tx.data.trim() } })

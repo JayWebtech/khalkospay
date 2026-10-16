@@ -104,7 +104,7 @@ export const SPECIES: Species[] = [
     bestAt: 'Second chances',
     watchOut: 'The luck only works once',
     stats: { metabolism: 50, toughness: 65, growth: 50 },
-    rules: { ...BASE },
+    rules: { ...BASE, lastStand: true },
   },
 ]
 

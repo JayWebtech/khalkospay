@@ -1,66 +1,57 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { Router } from 'express'
-import { prisma } from '../lib/prisma'
+import { rateLimit } from 'express-rate-limit'
+import { HttpError } from '../lib/http-error'
+import {
+  adoptPet,
+  changeBuddy,
+  feedPet,
+  getPet,
+  getRevival,
+  petConfigDto,
+  petDto,
+  revivalDto,
+  startRevival,
+  submitRevivalPayment,
+} from '../services/pets'
 
 export const biteBuddyRouter = Router()
 
-biteBuddyRouter.post('/analyze', async (req, res) => {
-  try {
-    const { image, mealType, userId } = req.body
-    if (!image) {
-      res.status(400).json({ message: 'No image provided' })
-      return
-    }
+const feedLimit = rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false })
 
-    const apiKey = process.env.ANTHROPIC_API_KEY
-    if (!apiKey) {
-      const demo = { name: 'Sample Meal (Demo)', score: 65, nutrients: { calories: 450, protein: 25, carbs: 55, fat: 15, fiber: 8 } }
-      res.json(demo)
-      return
-    }
+biteBuddyRouter.get('/config', (_req, res) => {
+  res.json(petConfigDto())
+})
 
-    const client = new Anthropic({ apiKey })
-    const base64 = image.replace(/^data:image\/\w+;base64,/, '')
-    const mediaType = image.startsWith('data:image/png') ? 'image/png' : 'image/jpeg'
+biteBuddyRouter.get('/pet', async (req, res) => {
+  res.json(await petDto(await getPet(req.query.address)))
+})
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-5-5',
-      max_tokens: 500,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-          { type: 'text', text: `Analyze this ${mealType || 'meal'} image. Return ONLY valid JSON with this exact structure: {"name":"meal name","score":0-100,"nutrients":{"calories":0,"protein":0,"carbs":0,"fat":0,"fiber":0}}. Score 80-100 = very healthy, 50-79 = moderate, 0-49 = unhealthy. Estimate realistic nutritional values.` },
-        ],
-      }],
-    })
+biteBuddyRouter.post('/pet', async (req, res) => {
+  const { address, species, name, timezone } = req.body ?? {}
+  res.status(201).json(await petDto(await adoptPet({ address, species, name, timezone })))
+})
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : ''
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      res.status(500).json({ message: 'Failed to parse AI response' })
-      return
-    }
+biteBuddyRouter.patch('/pet', async (req, res) => {
+  const { address, species, name } = req.body ?? {}
+  res.json(await petDto(await changeBuddy({ address, species, name })))
+})
 
-    const result = JSON.parse(jsonMatch[0])
+biteBuddyRouter.post('/pet/feed', feedLimit, async (req, res) => {
+  const { address, image } = req.body ?? {}
+  const { pet, meal } = await feedPet(address, image)
+  res.json({ pet: await petDto(pet), mealId: meal.id })
+})
 
-    await prisma.mealLog.create({
-      data: {
-        userId: userId || null,
-        mealType: mealType || 'unknown',
-        name: result.name,
-        score: result.score,
-        calories: result.nutrients.calories,
-        protein: result.nutrients.protein,
-        carbs: result.nutrients.carbs,
-        fat: result.nutrients.fat,
-        fiber: result.nutrients.fiber,
-      },
-    })
+biteBuddyRouter.post('/pet/revive', async (req, res) => {
+  res.status(201).json(revivalDto(await startRevival(req.body?.address)))
+})
 
-    res.json(result)
-  } catch (e) {
-    console.error('BiteBuddy error:', e)
-    res.status(500).json({ message: 'Failed to analyze meal' })
-  }
+biteBuddyRouter.get('/revivals/:id', async (req, res) => {
+  res.json(revivalDto(await getRevival(req.params.id)))
+})
+
+biteBuddyRouter.post('/revivals/:id/payment', async (req, res) => {
+  const tx = req.body?.tx
+  if (typeof tx !== 'string' || !tx) throw new HttpError(400, 'tx is required', 'INVALID_REQUEST')
+  res.json(revivalDto(await submitRevivalPayment(req.params.id, tx)))
 })
