@@ -73,9 +73,9 @@ export function OfframpPage() {
       <PageHeader
         title="Cash out"
         description="Naira straight to your bank"
-        back="/"
+
         action={
-          <ButtonLink to="/call" variant="outline" size="lg">
+          <ButtonLink to="/call" variant="default" size="lg">
             <Phone data-icon="inline-start" />
             Use voice
           </ButtonLink>
@@ -215,15 +215,15 @@ export function OfframpPage() {
           <ReviewSheet
             onBusyChange={setReviewBusy}
             quote={quote}
-          bank={bank}
-          accountName={account.name}
-          accountNumber={accountNumber}
-          amount={amount}
-          userAddress={wallet.address}
-          quoteTtlMinutes={Math.round((config?.quoteTtlSeconds ?? 600) / 60)}
-          feePercent={config?.feePercent ?? 1}
-          lockedOrder={lockedOrder}
-          onLocked={setLockedOrder}
+            bank={bank}
+            accountName={account.name}
+            accountNumber={accountNumber}
+            amount={amount}
+            userAddress={wallet.address}
+            quoteTtlMinutes={Math.round((config?.quoteTtlSeconds ?? 600) / 60)}
+            feePercent={config?.feePercent ?? 1}
+            lockedOrder={lockedOrder}
+            onLocked={setLockedOrder}
             onPaid={(order) => navigate(`/cash-out/${order.id}`)}
           />
         )}

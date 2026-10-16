@@ -1,9 +1,9 @@
-import { ArrowUpRight, Gift, Phone, Salad, Wallet } from 'lucide-react'
-import { useEffect, type ReactNode } from 'react'
+import { ArrowUpRight, ChevronDown, Gift, Phone, Salad, Wallet } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { AccountSheet } from '@/components/account-sheet'
 import { BrandMark } from '@/components/brand-mark'
 import { OrderList } from '@/components/order-list'
-import { Badge } from '@/components/ui/badge'
 import { ButtonLink } from '@/components/button-link'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
@@ -11,10 +11,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { formatNgn, lunaToNim, shortAddress } from '@/lib/format'
 import { useOrders, useRate } from '@/lib/offramp'
+import { cn } from '@/lib/utils'
 import { useWallet } from '@/lib/wallet'
 
-function BalanceBlock() {
-  const { status, balanceLuna, connect } = useWallet()
+function BalanceBlock({ onSwitchAccount }: { onSwitchAccount: () => void }) {
+  const { status, balanceLuna, syncing, address, network, accounts, connect } = useWallet()
   const rate = useRate()
 
   if (status === 'detecting') {
@@ -47,16 +48,29 @@ function BalanceBlock() {
         {nim === null ? '—' : nim.toLocaleString('en-US', { maximumFractionDigits: 2 })}
         <span className="ml-1.5 text-lg font-medium text-hero-muted">NIM</span>
       </p>
-      <p className="text-sm text-hero-muted tabular-nums">
-        {nim !== null && rate !== null ? `≈ ${formatNgn(Math.floor(nim * rate))} · 1 NIM = ₦${rate.toFixed(4)}` : ' '}
+      <p className="text-sm text-hero-muted tabular-nums" aria-live="polite">
+        {syncing && nim === null
+          ? 'Nimiq Pay is still syncing. Your balance appears in a moment.'
+          : nim !== null && rate !== null
+            ? `≈ ${formatNgn(Math.floor(nim * rate))} · 1 NIM = ₦${rate.toFixed(4)}`
+            : ' '}
       </p>
+      {nim === 0 && address && (
+        <p className="mt-2 text-sm text-hero-muted">
+          No NIM in {shortAddress(address)} on {network}.{' '}
+          <button type="button" onClick={onSwitchAccount} className="-my-2 py-2 font-medium text-hero-foreground underline underline-offset-4">
+            {accounts.length > 1 ? 'Switch account' : 'Check account'}
+          </button>
+        </p>
+      )}
     </>
   )
 }
 
 export function HomePage() {
-  const { address, refreshBalance } = useWallet()
+  const { address, network, refreshBalance } = useWallet()
   const orders = useOrders(address)
+  const [accountsOpen, setAccountsOpen] = useState(false)
 
   useEffect(() => {
     void refreshBalance()
@@ -70,11 +84,22 @@ export function HomePage() {
           <span className="text-lg font-semibold tracking-tight">KhalkosPay</span>
         </div>
         {address && (
-          <Badge variant="outline" className="h-7 px-2.5 font-mono text-[0.6875rem]">
-            {shortAddress(address)}
-          </Badge>
+          <button
+            type="button"
+            onClick={() => setAccountsOpen(true)}
+            aria-label={`Wallet ${shortAddress(address)} on ${network}. Switch account`}
+            className="-mr-1 flex h-11 items-center rounded-full px-1 text-[0.6875rem] motion-safe:active:scale-[0.96]"
+          >
+            <span className="flex h-7 items-center gap-1.5 rounded-full border border-border px-2.5">
+              <span aria-hidden="true" className={cn('size-1.5 rounded-full', network === 'testnet' ? 'bg-amber-400' : 'bg-success')} />
+              {network === 'testnet' && <span className="font-medium">Testnet</span>}
+              <span className="font-mono">{shortAddress(address)}</span>
+              <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
+            </span>
+          </button>
         )}
       </header>
+      <AccountSheet open={accountsOpen} onOpenChange={setAccountsOpen} />
 
       <section className="px-4" aria-label="Wallet">
         <div className="relative isolate overflow-hidden rounded-3xl bg-hero p-5 text-hero-foreground shadow-[0_16px_40px_-20px_oklch(0.23_0.02_50/0.7)]">
@@ -83,7 +108,7 @@ export function HomePage() {
             className="pointer-events-none absolute -top-28 -right-20 -z-10 size-72 rounded-full bg-[radial-gradient(closest-side,var(--color-hero-accent),transparent)] opacity-30"
           />
           <p className="text-sm text-hero-muted">Wallet balance</p>
-          <BalanceBlock />
+          <BalanceBlock onSwitchAccount={() => setAccountsOpen(true)} />
           <div className="mt-5 grid grid-cols-2 gap-2">
             <ButtonLink to="/cash-out" size="xl">
               <ArrowUpRight data-icon="inline-start" />

@@ -19,7 +19,7 @@ export function lunaToNim(luna: number) {
 
 export function shortAddress(address: string) {
   const groups = address.split(' ')
-  return groups.length >= 9 ? `${groups[0]} ${groups[1]} … ${groups[8]}` : address
+  return groups.length >= 9 ? `${groups[1]} … ${groups[8]}` : address
 }
 
 export function shortHash(hash: string) {

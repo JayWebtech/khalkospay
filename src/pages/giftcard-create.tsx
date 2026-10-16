@@ -118,14 +118,22 @@ export function GiftCardCreatePage() {
         <ToggleGroup
           value={[template]}
           onValueChange={(v) => v[0] && setTemplate(v[0])}
-          className="grid w-full grid-cols-3 gap-2"
+          className="-mx-4 w-auto snap-x snap-mandatory scroll-px-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none]"
           aria-label="Design"
         >
           {GIFT_TEMPLATES.map((t) => (
-            <ToggleGroupItem key={t.id} value={t.id} variant="outline" className="h-14 flex-col gap-0.5 rounded-xl text-xs">
-              <span className="text-lg leading-none" aria-hidden="true">
-                {t.emoji}
-              </span>
+            <ToggleGroupItem
+              key={t.id}
+              value={t.id}
+              className="h-auto w-28 shrink-0 snap-start flex-col gap-1.5 rounded-2xl p-1 text-xs font-medium text-muted-foreground hover:bg-transparent aria-pressed:bg-transparent aria-pressed:text-foreground"
+            >
+              <img
+                src={t.image}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                className="aspect-[1.6] w-full rounded-xl object-cover ring-1 ring-foreground/10 transition-[box-shadow] group-aria-pressed/toggle:ring-2 group-aria-pressed/toggle:ring-primary group-aria-pressed/toggle:ring-offset-2 group-aria-pressed/toggle:ring-offset-background"
+              />
               {t.label}
             </ToggleGroupItem>
           ))}

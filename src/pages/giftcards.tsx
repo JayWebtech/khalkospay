@@ -14,7 +14,6 @@ import type { SentGift } from '@/lib/api'
 import { formatNim, timeAgo } from '@/lib/format'
 import { giftTemplate } from '@/lib/gift-templates'
 import { useMyGifts } from '@/lib/gifts'
-import { cn } from '@/lib/utils'
 import { useSessionFor, useWalletSession } from '@/lib/wallet-session'
 import { errorMessage, isUserRejection, useWallet } from '@/lib/wallet'
 
@@ -25,7 +24,7 @@ function sentStatus(g: SentGift): { label: string; tone: Tone } {
     case 'AWAITING_FUNDING':
       return g.confirming ? { label: 'Confirming', tone: 'pending' } : { label: 'Unpaid', tone: 'secondary' }
     case 'ACTIVE':
-      return { label: 'Not claimed yet', tone: 'pending' }
+      return { label: 'Unclaimed', tone: 'pending' }
     case 'CLAIMING':
       return { label: 'Being claimed', tone: 'pending' }
     case 'CLAIMED':
@@ -153,13 +152,11 @@ function SentGiftRow({ gift }: { gift: SentGift }) {
       to={`/gifts/${gift.id}`}
       className="flex min-h-18 items-center gap-3 rounded-2xl bg-card p-3 ring-1 ring-foreground/10 transition-[scale] motion-safe:active:scale-[0.98]"
     >
-      <span className={cn('flex size-12 shrink-0 items-center justify-center rounded-xl text-2xl', t.art)} aria-hidden="true">
-        {t.emoji}
-      </span>
+      <img src={t.image} alt="" loading="lazy" decoding="async" className="aspect-[1.6] w-16 shrink-0 rounded-lg object-cover ring-1 ring-foreground/10" />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-2">
-          <span className="font-semibold tabular-nums">{formatNim(gift.nimAmount, 5)}</span>
-          <span className="truncate text-sm text-muted-foreground">{timeAgo(gift.createdAt)}</span>
+          <span className="shrink-0 font-semibold whitespace-nowrap tabular-nums">{formatNim(gift.nimAmount, 5)}</span>
+          <span className="min-w-0 truncate text-sm text-muted-foreground">{timeAgo(gift.createdAt)}</span>
         </span>
         <span className="block truncate text-sm text-muted-foreground">{gift.message ? `“${gift.message}”` : (gift.recipientEmail ?? 'No message')}</span>
       </span>

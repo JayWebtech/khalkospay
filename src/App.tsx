@@ -5,7 +5,7 @@ import { MealReminders } from '@/components/meal-reminders'
 import { flushPendingFunding } from '@/lib/gifts'
 import { flushPendingDeposits } from '@/lib/offramp'
 import { flushPendingRevivals } from '@/lib/pets'
-import { useWallet } from '@/lib/wallet'
+import { startBalanceRefresh, useWallet } from '@/lib/wallet'
 import { BiteBuddyPage } from '@/pages/bitebuddy'
 import { GiftRedeemPage } from '@/pages/gift-redeem'
 import { SentGiftPage } from '@/pages/gift-sent'
@@ -20,6 +20,8 @@ export function App() {
   const detect = useWallet((s) => s.detect)
   const { pathname } = useLocation()
   const standalone = pathname.startsWith('/gift/')
+
+  useEffect(() => startBalanceRefresh(), [])
 
   useEffect(() => {
     void detect()
