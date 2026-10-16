@@ -8,6 +8,7 @@ import { flushPendingRevivals } from '@/lib/pets'
 import { useWallet } from '@/lib/wallet'
 import { BiteBuddyPage } from '@/pages/bitebuddy'
 import { GiftRedeemPage } from '@/pages/gift-redeem'
+import { SentGiftPage } from '@/pages/gift-sent'
 import { GiftCardCreatePage } from '@/pages/giftcard-create'
 import { GiftCardsPage } from '@/pages/giftcards'
 import { HomePage } from '@/pages/home'
@@ -42,6 +43,7 @@ export function App() {
           <Route path="/bitebuddy" element={<BiteBuddyPage />} />
           <Route path="/gifts" element={<GiftCardsPage />} />
           <Route path="/gifts/new" element={<GiftCardCreatePage />} />
+          <Route path="/gifts/:id" element={<SentGiftPage />} />
           <Route path="/gift/:id" element={<GiftRedeemPage />} />
           <Route path="/offramp" element={<Navigate to="/cash-out" replace />} />
           <Route path="/voice" element={<Navigate to="/call" replace />} />

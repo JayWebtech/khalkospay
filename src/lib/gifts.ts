@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, ApiError, type GiftCard, type GiftConfig, type GiftStatus } from './api'
+import { api, ApiError, type GiftCard, type GiftConfig, type GiftStatus, type SentGift } from './api'
+import { authedApi, type Session } from './wallet-session'
 
 /** Statuses the server is still working on, so the card is worth polling. */
 const IN_FLIGHT: GiftStatus[] = ['AWAITING_FUNDING', 'CLAIMING', 'REFUNDING']
@@ -81,6 +82,34 @@ export function claimGiftCard(id: string, input: { redeemCode: string; claimerAd
   return api<GiftCard>(`/api/giftcards/${id}/claim`, { json: input })
 }
 
+/** The signed-in wallet's sent gifts, refreshed every 20 seconds while shown. */
+export function useMyGifts(session: Session | null) {
+  const [state, setState] = useState<{ gifts: SentGift[] | null; error: string | null }>({ gifts: null, error: null })
+  useEffect(() => {
+    if (!session) {
+      setState({ gifts: null, error: null })
+      return
+    }
+    let alive = true
+    const load = () =>
+      authedApi<SentGift[]>(session, '/api/giftcards').then(
+        (gifts) => alive && setState({ gifts, error: null }),
+        (e) => alive && setState((s) => ({ gifts: s.gifts, error: messageOf(e) })),
+      )
+    void load()
+    const timer = setInterval(load, 20_000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [session])
+  return state
+}
+
+export function reclaimGift(session: Session, id: string) {
+  return authedApi<GiftCard>(session, `/api/giftcards/${id}/reclaim`, { json: {} })
+}
+
 const PENDING_KEY = 'khalkospay.pendingGiftFunding'
 
 function readPending(): Record<string, string> {
@@ -97,6 +126,11 @@ function writePending(pending: Record<string, string>) {
   } catch {
     // The server also scans the deposit address, so a lost record is recoverable.
   }
+}
+
+/** True while a signed payment for this gift hasn't been accepted by the server yet; paying again could double-pay. */
+export function hasPendingFunding(cardId: string) {
+  return cardId in readPending()
 }
 
 /** Records the wallet's tx locally first so a dropped connection can be retried on next launch. */

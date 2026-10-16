@@ -2,7 +2,18 @@ import { Router } from 'express'
 import { rateLimit } from 'express-rate-limit'
 import { config } from '../config'
 import { HttpError } from '../lib/http-error'
-import { cardDto, claimCard, createCard, getCard, giftConfigDto, submitFunding } from '../services/giftcards'
+import {
+  cardDto,
+  claimCard,
+  createCard,
+  getCard,
+  giftConfigDto,
+  listSenderCards,
+  reclaimCard,
+  senderCardDto,
+  submitFunding,
+} from '../services/giftcards'
+import { requireWallet } from '../services/wallet-auth'
 
 export const giftCardsRouter = Router()
 
@@ -42,6 +53,17 @@ giftCardsRouter.post('/', createLimit, async (req, res) => {
   }
   const card = await createCard({ senderAddress, nimAmount, redeemCode, message, template, recipientEmail, anonymous })
   res.status(201).json(cardDto(card))
+})
+
+// The sender's gifts carry their links, which are half of what it takes to claim, so this needs a signed-in wallet.
+giftCardsRouter.get('/', async (req, res) => {
+  const address = requireWallet(req)
+  res.json((await listSenderCards(address)).map(senderCardDto))
+})
+
+giftCardsRouter.post('/:id/reclaim', async (req, res) => {
+  const address = requireWallet(req)
+  res.json(cardDto(await reclaimCard(req.params.id, address)))
 })
 
 giftCardsRouter.get('/:id', async (req, res) => {

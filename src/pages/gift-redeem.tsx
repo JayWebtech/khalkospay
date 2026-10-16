@@ -127,8 +127,12 @@ function GiftState({ card, onChange }: { card: GiftCard; onChange: (card: GiftCa
       return (
         <Alert>
           <Undo2 />
-          <AlertTitle>Nothing to claim</AlertTitle>
-          <AlertDescription>The sender's payment didn't cover this gift, so KhalkosPay returned their NIM. Ask them to send a new one.</AlertDescription>
+          <AlertTitle>{card.reclaimed ? 'The sender took this gift back' : 'Nothing to claim'}</AlertTitle>
+          <AlertDescription>
+            {card.reclaimed
+              ? 'They cancelled it before anyone claimed it, so the NIM went back to them. Nothing was taken from you.'
+              : "The sender's payment didn't cover this gift, so KhalkosPay returned their NIM. Ask them to send a new one."}
+          </AlertDescription>
         </Alert>
       )
   }

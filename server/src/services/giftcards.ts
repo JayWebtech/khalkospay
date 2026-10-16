@@ -186,10 +186,51 @@ function notClaimable(card: GiftCard): HttpError {
       return new HttpError(409, 'This gift expired before the sender paid for it', 'GIFT_EXPIRED')
     case 'REFUNDING':
     case 'REFUNDED':
-      return new HttpError(409, 'This gift was cancelled and the NIM returned to the sender', 'GIFT_REFUNDED')
+      return card.reclaimedAt
+        ? new HttpError(409, 'The sender took this gift back', 'GIFT_RECLAIMED')
+        : new HttpError(409, 'This gift was cancelled and the NIM returned to the sender', 'GIFT_REFUNDED')
     default:
       return new HttpError(409, 'This gift has already been claimed', 'ALREADY_CLAIMED')
   }
+}
+
+/** Every gift a wallet sent or paid for, newest first; unpaid ones that expired are left out. */
+export async function listSenderCards(address: string): Promise<GiftCard[]> {
+  return prisma.giftCard.findMany({
+    where: { OR: [{ senderAddress: address }, { fundedFrom: address }], NOT: { status: 'EXPIRED', fundingTxHash: null } },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  })
+}
+
+function notReclaimable(card: GiftCard): HttpError {
+  switch (card.status) {
+    case 'AWAITING_FUNDING':
+      return new HttpError(409, "This gift isn't paid for yet, so there's nothing to take back. Unpaid gifts expire on their own.", 'GIFT_NOT_FUNDED')
+    case 'EXPIRED':
+      return new HttpError(409, 'This gift expired before it was paid for', 'GIFT_EXPIRED')
+    case 'REFUNDING':
+    case 'REFUNDED':
+      return new HttpError(409, 'The NIM for this gift has already gone back to you', 'GIFT_REFUNDED')
+    default:
+      return new HttpError(409, "This gift has already been claimed, so it can't be taken back", 'ALREADY_CLAIMED')
+  }
+}
+
+/**
+ * The sender takes an unclaimed gift back. It is the same conditional move out of ACTIVE that a claim
+ * makes, so a claim and a reclaim can never both win; the NIM always returns to the address that paid.
+ */
+export async function reclaimCard(id: string, address: string): Promise<GiftCard> {
+  const card = await getCard(id)
+  if (address !== card.senderAddress && address !== card.fundedFrom) {
+    throw new HttpError(403, 'Only the wallet that sent this gift can take it back', 'NOT_SENDER')
+  }
+  if (card.status !== 'ACTIVE') throw notReclaimable(card)
+  const reclaiming = await transition(card, 'REFUNDING', { reclaimedAt: new Date(), failureReason: null })
+  if (!reclaiming) throw notReclaimable(await getCard(id))
+  await processCard(reclaiming.id)
+  return getCard(reclaiming.id)
 }
 
 export async function claimCard(id: string, input: { redeemCode: unknown; claimerAddress: unknown }): Promise<GiftCard> {
@@ -417,7 +458,7 @@ export function giftConfigDto() {
 
 /** Public view of a card: anyone holding the link sees this, so it never includes the code hash or email. */
 export function cardDto(card: GiftCard) {
-  const funded = FUNDED.includes(card.status) && card.receivedLuna !== null
+  const funded = card.receivedLuna !== null && (FUNDED.includes(card.status) || card.reclaimedAt !== null)
   return {
     id: card.id,
     status: card.status,
@@ -441,7 +482,18 @@ export function cardDto(card: GiftCard) {
     createdAt: card.createdAt.toISOString(),
     fundedAt: card.fundedAt?.toISOString() ?? null,
     claimedAt: card.claimedAt?.toISOString() ?? null,
+    reclaimed: card.reclaimedAt !== null,
   }
 }
 
 export type GiftCardDto = ReturnType<typeof cardDto>
+
+/** The sender's own view, only served to a wallet that proved it sent or paid for the gift. */
+export function senderCardDto(card: GiftCard) {
+  return {
+    ...cardDto(card),
+    anonymous: card.anonymous,
+    recipientEmail: card.recipientEmail,
+    reclaimedAt: card.reclaimedAt?.toISOString() ?? null,
+  }
+}

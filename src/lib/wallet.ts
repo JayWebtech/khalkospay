@@ -44,6 +44,7 @@ interface WalletState {
   connect: () => Promise<void>
   refreshBalance: () => Promise<void>
   pay: (payment: { recipient: string; valueLuna: number; data: string }) => Promise<string>
+  sign: (message: string) => Promise<{ publicKey: string; signature: string }>
   disconnect: () => void
 }
 
@@ -97,6 +98,12 @@ export const useWallet = create<WalletState>((set, get) => ({
     const tx = await provider.sendBasicTransactionWithData({ recipient, value: valueLuna, data })
     setTimeout(() => void get().refreshBalance(), 4_000)
     return tx
+  },
+
+  sign: async (message) => {
+    const { provider } = get()
+    if (!provider) throw new Error('Open KhalkosPay inside Nimiq Pay to sign in')
+    return provider.sign(message)
   },
 
   disconnect: () => {
