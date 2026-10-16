@@ -77,29 +77,29 @@ function senderStatus(card: GiftCard): SenderStatus {
     case 'REFUNDING':
       return card.reclaimed
         ? {
-            icon: Undo2,
-            tone: 'bg-accent text-accent-foreground',
-            title: 'Taking the gift back',
-            body: `${amount} is on its way back to your wallet. The gift link no longer works.`,
-            shareable: false,
-          }
+          icon: Undo2,
+          tone: 'bg-accent text-accent-foreground',
+          title: 'Taking the gift back',
+          body: `${amount} is on its way back to your wallet. The gift link no longer works.`,
+          shareable: false,
+        }
         : {
-            icon: Undo2,
-            tone: 'bg-accent text-accent-foreground',
-            title: 'Refunding your NIM',
-            body: `${card.failureReason ?? "The payment didn't cover this gift"}. We're sending it back to your wallet.`,
-            shareable: false,
-          }
+          icon: Undo2,
+          tone: 'bg-accent text-accent-foreground',
+          title: 'Refunding your NIM',
+          body: `${card.failureReason ?? "The payment didn't cover this gift"}. We're sending it back to your wallet.`,
+          shareable: false,
+        }
     case 'REFUNDED':
       return card.reclaimed
         ? { icon: Undo2, tone: 'bg-muted text-foreground', title: 'Gift taken back', body: `${amount} is back in your wallet.`, shareable: false }
         : {
-            icon: Undo2,
-            tone: 'bg-muted text-foreground',
-            title: 'NIM refunded',
-            body: `${card.failureReason ?? "The payment didn't cover this gift"}. It's back in your wallet.`,
-            shareable: false,
-          }
+          icon: Undo2,
+          tone: 'bg-muted text-foreground',
+          title: 'NIM refunded',
+          body: `${card.failureReason ?? "The payment didn't cover this gift"}. It's back in your wallet.`,
+          shareable: false,
+        }
     case 'EXPIRED':
       return { icon: TimerOff, tone: 'bg-muted text-foreground', title: 'Gift expired', body: 'No payment arrived in time. Nothing was taken.', shareable: false }
   }
@@ -167,7 +167,7 @@ export function SentGiftPage() {
 
         {card?.status === 'ACTIVE' && <TakeBack card={card} onDone={update} />}
 
-        <ButtonLink to="/gifts" size="xl" variant="outline">
+        <ButtonLink to="/gifts" size="xl" variant="default">
           Done
         </ButtonLink>
       </div>
