@@ -114,6 +114,8 @@ model LedgerEntry {
 model GiftCard {
   id                 String         @id @default(uuid())
   reference          String         @unique
+  /// Short code recipients can type into the app to open the gift, e.g. K7QM3XPD (shown as K7QM-3XPD).
+  shareCode          String?        @unique
   amountLuna         BigInt
   message            String         @default("")
   redeemCodeHash     String

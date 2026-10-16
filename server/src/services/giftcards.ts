@@ -116,23 +116,63 @@ export async function createCard(input: {
     throw new HttpError(400, 'Recipient email looks invalid', 'INVALID_REQUEST')
   }
 
-  return prisma.giftCard.create({
-    data: {
-      reference: `${GIFT_REFERENCE_PREFIX}${randomBytes(8).toString('hex')}`,
-      amountLuna,
-      message: optionalString(input.message, 'message', MAX_MESSAGE_LENGTH) ?? '',
-      redeemCodeHash: await hashRedeemCode(code),
-      template,
-      senderAddress,
-      recipientEmail,
-      anonymous: input.anonymous === true,
-      expiresAt: new Date(Date.now() + config.gifts.fundingTtlSeconds * 1000),
-    },
-  })
+  const data = {
+    reference: `${GIFT_REFERENCE_PREFIX}${randomBytes(8).toString('hex')}`,
+    amountLuna,
+    message: optionalString(input.message, 'message', MAX_MESSAGE_LENGTH) ?? '',
+    redeemCodeHash: await hashRedeemCode(code),
+    template,
+    senderAddress,
+    recipientEmail,
+    anonymous: input.anonymous === true,
+    expiresAt: new Date(Date.now() + config.gifts.fundingTtlSeconds * 1000),
+  }
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await prisma.giftCard.create({ data: { ...data, shareCode: newShareCode() } })
+    } catch (e) {
+      // A share-code collision is astronomically rare; retry with a fresh one.
+      const collided = e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002' && String(e.meta?.target ?? '').includes('shareCode')
+      if (!collided || attempt >= 4) throw e
+    }
+  }
 }
 
+// No 0/O, 1/I/L or U, so a code read aloud or copied by hand can't be mistyped into another one.
+const SHARE_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789'
+const SHARE_CODE_LENGTH = 8
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function newShareCode(): string {
+  return Array.from(randomBytes(SHARE_CODE_LENGTH), (b) => SHARE_ALPHABET[b % SHARE_ALPHABET.length]).join('')
+}
+
+/** Accepts `k7qm-3xpd`, `K7QM 3XPD` or `K7QM3XPD`. */
+export function normalizeShareCode(input: string): string | null {
+  const code = input.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  return code.length === SHARE_CODE_LENGTH && [...code].every((c) => SHARE_ALPHABET.includes(c)) ? code : null
+}
+
+export function formatShareCode(code: string): string {
+  return `${code.slice(0, 4)}-${code.slice(4)}`
+}
+
+/** Finds a gift by its id (from a link) or its share code (typed into the app). Lookup only: actions take the id. */
+export async function findCard(idOrCode: string): Promise<GiftCard> {
+  const key = idOrCode.trim()
+  if (UUID.test(key)) return getCard(key)
+  const shareCode = normalizeShareCode(key)
+  const card = shareCode ? await prisma.giftCard.findUnique({ where: { shareCode } }) : null
+  if (!card) throw new HttpError(404, "We couldn't find a gift with that code", 'GIFT_NOT_FOUND')
+  return card
+}
+
+/**
+ * By id only. Claims are rate-limited per id in the URL, so they must not accept a code that could be
+ * spelled several ways to get fresh attempts.
+ */
 export async function getCard(id: string): Promise<GiftCard> {
-  const card = await prisma.giftCard.findUnique({ where: { id } })
+  const card = UUID.test(id) ? await prisma.giftCard.findUnique({ where: { id } }) : null
   if (!card) throw new HttpError(404, "This gift link doesn't exist", 'GIFT_NOT_FOUND')
   return card
 }
@@ -462,6 +502,7 @@ export function cardDto(card: GiftCard) {
   const funded = card.receivedLuna !== null && (FUNDED.includes(card.status) || card.reclaimedAt !== null)
   return {
     id: card.id,
+    shareCode: card.shareCode ? formatShareCode(card.shareCode) : null,
     status: card.status,
     nimAmount: formatNim(funded ? card.receivedLuna! : card.amountLuna),
     message: card.message,

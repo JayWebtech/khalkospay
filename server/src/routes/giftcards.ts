@@ -6,7 +6,7 @@ import {
   cardDto,
   claimCard,
   createCard,
-  getCard,
+  findCard,
   giftConfigDto,
   listSenderCards,
   reclaimCard,
@@ -66,8 +66,19 @@ giftCardsRouter.post('/:id/reclaim', async (req, res) => {
   res.json(cardDto(await reclaimCard(req.params.id, address)))
 })
 
-giftCardsRouter.get('/:id', async (req, res) => {
-  res.json(cardDto(await getCard(req.params.id)))
+// Gift codes are short, so throttle code lookups to keep anyone from walking the code space.
+// Lookups by full id (128-bit, what the pages poll with) aren't guessable and stay unthrottled.
+const codeLookupLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  skip: (req) => /^[0-9a-f-]{36}$/i.test(String(req.params.id)),
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { message: 'Too many gift code lookups. Wait a minute and try again.', code: 'TOO_MANY_LOOKUPS' },
+})
+
+giftCardsRouter.get('/:id', codeLookupLimit, async (req, res) => {
+  res.json(cardDto(await findCard(String(req.params.id))))
 })
 
 giftCardsRouter.post('/:id/funding', async (req, res) => {
