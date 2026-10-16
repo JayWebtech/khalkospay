@@ -13,6 +13,7 @@ import {
   getTransaction,
   normalizeAddress,
   parseNimToLuna,
+  resolvePayoutAddress,
   resolveTxHash,
   treasuryAddress,
 } from './nimiq'
@@ -406,7 +407,9 @@ async function confirmPayment(revival: PetRevival) {
 
 async function sendRefund(revival: PetRevival) {
   if (!revival.payer || !revival.receivedLuna) throw new Error(`revival ${revival.id} has nothing to refund`)
-  const { hash, hex } = await buildTreasuryTransaction(revival.payer, revival.receivedLuna, `refund ${revival.reference}`)
+  // A Nimiq Pay payment comes from its HTLC wallet, which can't receive a transfer; refund the wallet that owns it.
+  const target = await resolvePayoutAddress(revival.payer)
+  const { hash, hex } = await buildTreasuryTransaction(target, revival.receivedLuna, `refund ${revival.reference}`)
   // Compare-and-swap on the previous hash so two workers never broadcast two different refunds.
   const saved = await prisma.petRevival.updateMany({
     where: { id: revival.id, status: 'REFUNDING', refundTxHash: revival.refundTxHash },
@@ -434,7 +437,7 @@ async function advanceRefund(revival: PetRevival) {
           asset: 'NIM',
           amount: revival.receivedLuna!,
           debit: `nim:${treasuryAddress}`,
-          credit: `nim:${revival.payer}`,
+          credit: `nim:${tx.to}`,
           externalRef: tx.hash,
         },
       })

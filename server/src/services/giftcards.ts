@@ -13,7 +13,9 @@ import {
   formatNim,
   getTransaction,
   normalizeAddress,
+  NotPayableError,
   parseNimToLuna,
+  resolvePayoutAddress,
   resolveTxHash,
   treasuryAddress,
 } from './nimiq'
@@ -324,6 +326,14 @@ export async function claimCard(id: string, input: { redeemCode: unknown; claime
   if (!code || !(await verifyRedeemCode(code, card.redeemCodeHash))) {
     throw new HttpError(403, "That code doesn't match this gift", 'WRONG_CODE')
   }
+  // Only after the code checks out, so wrong guesses never cost an RPC lookup.
+  // Nimiq Pay may also list a contract (its HTLC wallet) as an account; pay the wallet that owns it instead.
+  try {
+    claimerAddress = await resolvePayoutAddress(claimerAddress)
+  } catch (e) {
+    if (e instanceof NotPayableError) throw new HttpError(400, "That account can't receive NIM. Pick another account in your wallet.", 'NOT_PAYABLE')
+    throw new HttpError(503, "We couldn't check your wallet address right now. Try again in a moment.", 'RPC_UNAVAILABLE')
+  }
 
   const claiming = await transition(card, 'CLAIMING', { claimerAddress, failureReason: null })
   if (!claiming) throw notClaimable(await getCard(id))
@@ -478,11 +488,13 @@ async function sendPayout(card: GiftCard, leg: PayoutLeg) {
   const l = LEG[leg]
   const recipient = l.recipient(card)
   if (!recipient || !card.receivedLuna) throw new Error(`card ${card.id} has nothing to ${leg}`)
-  const { hash, hex } = await buildTreasuryTransaction(recipient, card.receivedLuna, l.memo(card))
+  // Re-resolved on every attempt, so a card that got stuck paying a contract heals on its next retry.
+  const target = await resolvePayoutAddress(recipient)
+  const { hash, hex } = await buildTreasuryTransaction(target, card.receivedLuna, l.memo(card))
   const previous = l.sent(card).hash
   const saved = await prisma.giftCard.updateMany({
     where: { id: card.id, status: l.from, ...(leg === 'claim' ? { claimTxHash: previous } : { refundTxHash: previous }) },
-    data: l.record(hash, hex, new Date()),
+    data: { ...l.record(hash, hex, new Date()), ...(leg === 'claim' && target !== card.claimerAddress ? { claimerAddress: target } : {}) },
   })
   if (saved.count === 0) return
   lastPoll.set(`${leg}:${card.id}`, Date.now())
@@ -504,7 +516,8 @@ async function advancePayout(card: GiftCard, leg: PayoutLeg) {
         asset: 'NIM',
         amount: card.receivedLuna!,
         debit: `nim:${treasuryAddress}`,
-        credit: `nim:${l.recipient(card)}`,
+        // Whoever the confirmed transaction actually paid (a contract's owner, not the contract).
+        credit: `nim:${tx.to}`,
         externalRef: tx.hash,
       },
       leg === 'claim' ? { claimTxHash: tx.hash } : { refundTxHash: tx.hash },

@@ -71,7 +71,10 @@ export function GiftRedeemPage() {
 
 function GiftState({ card, onChange }: { card: GiftCard; onChange: (card: GiftCard) => void }) {
   const address = useWallet((s) => s.address)
+  const accounts = useWallet((s) => s.accounts)
   const amount = formatNim(card.nimAmount, 5)
+  // The payout can land on the wallet that owns the selected account (Nimiq Pay's HTLC wallets), so match any of them.
+  const claimedByMe = [address, ...accounts].some((a) => sameAddress(card.claimerAddress, a))
 
   switch (card.status) {
     case 'AWAITING_FUNDING':
@@ -102,7 +105,7 @@ function GiftState({ card, onChange }: { card: GiftCard; onChange: (card: GiftCa
         </>
       )
     case 'CLAIMED':
-      return sameAddress(card.claimerAddress, address) ? (
+      return claimedByMe ? (
         <>
           <Alert>
             <PartyPopper />

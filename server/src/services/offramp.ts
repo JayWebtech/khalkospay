@@ -16,6 +16,7 @@ import {
   LUNA_PER_NIM,
   normalizeAddress,
   parseNimToLuna,
+  resolvePayoutAddress,
   resolveTxHash,
   treasuryAddress,
 } from './nimiq'
@@ -397,7 +398,9 @@ async function startRefund(order: OfframpOrder) {
 }
 
 async function sendRefund(order: OfframpOrder) {
-  const { hash, hex } = await buildTreasuryTransaction(order.depositFrom!, order.receivedLuna!, `refund ${order.reference}`)
+  // A Nimiq Pay deposit comes from its HTLC wallet, which can't receive a transfer; refund the wallet that owns it.
+  const target = await resolvePayoutAddress(order.depositFrom!)
+  const { hash, hex } = await buildTreasuryTransaction(target, order.receivedLuna!, `refund ${order.reference}`)
   await prisma.offrampOrder.update({ where: { id: order.id }, data: { refundTxHash: hash, refundTxHex: hex, refundSentAt: new Date() } })
   lastPoll.set(`refund:${order.id}`, Date.now())
   await broadcastTransaction(hex).catch((e) => console.error(`[offramp] refund broadcast for ${order.id} failed:`, e.message))
@@ -412,7 +415,7 @@ async function advanceRefund(order: OfframpOrder) {
       asset: 'NIM',
       amount: order.receivedLuna!,
       debit: `nim:${treasuryAddress}`,
-      credit: `nim:${order.depositFrom}`,
+      credit: `nim:${tx.to}`,
       externalRef: tx.hash,
     })
     return

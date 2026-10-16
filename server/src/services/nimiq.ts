@@ -119,6 +119,35 @@ export async function getTransaction(hash: string): Promise<ChainTransaction | n
   }
 }
 
+/** The address is a contract nothing can be paid to (e.g. a staking contract). */
+export class NotPayableError extends Error {}
+
+interface RawAccount {
+  type: 'basic' | 'vesting' | 'htlc' | 'staking' | string
+  /** HTLC: the party that funded it and gets it back on timeout. Nimiq Pay wallets keep funds in an HTLC whose sender is the user's own key. */
+  sender?: string
+  /** Vesting contract owner. */
+  owner?: string
+}
+
+/**
+ * Where NIM sent "to" an address can actually land. Only basic accounts accept a plain transfer; a payout to
+ * a contract is mined but fails without moving NIM. Nimiq Pay keeps a user's spendable NIM in an HTLC owned
+ * by their key, so we pay the contract's owner, which is that user's own basic account. Unknown addresses
+ * report as basic.
+ */
+export async function resolvePayoutAddress(address: string): Promise<string> {
+  let current = normalizeAddress(address)
+  for (let hop = 0; hop < 3; hop++) {
+    const account = await rpc<RawAccount>('getAccountByAddress', [current])
+    if (account.type === 'basic') return current
+    const owner = account.type === 'htlc' ? account.sender : account.type === 'vesting' ? account.owner : undefined
+    if (!owner) throw new NotPayableError(`${current} is a ${account.type} contract and can't receive NIM`)
+    current = normalizeAddress(owner)
+  }
+  throw new NotPayableError(`Couldn't find a wallet account behind ${address}`)
+}
+
 /** Signs a payment from the treasury without broadcasting, so the hash can be persisted first. */
 export async function buildTreasuryTransaction(
   recipient: string,
