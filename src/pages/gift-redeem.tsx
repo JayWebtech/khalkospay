@@ -188,9 +188,12 @@ function ClaimForm({ card, onClaimed }: { card: GiftCard; onClaimed: (card: Gift
           <Input
             id="redeem-code"
             autoComplete="off"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
             placeholder="Ask the sender for it"
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
             aria-invalid={claimError ? true : undefined}
             className="font-mono tracking-widest"
           />

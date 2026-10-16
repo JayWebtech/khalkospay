@@ -49,11 +49,14 @@ export const useWalletSession = create<SessionStore>((set, get) => ({
     if (existing && sameAddress(existing.address, address) && new Date(existing.expiresAt).getTime() > Date.now() + 60_000) return existing
     set({ signingIn: true })
     try {
-      const challenge = await api<{ challengeId: string; message: string }>('/api/auth/challenge', { json: { address } })
+      const challenge = await api<{ challengeId: string; message: string }>('/api/auth/challenge', { json: {} })
       const signed = await sign(challenge.message)
       const session = await api<Session>('/api/auth/verify', { json: { challengeId: challenge.challengeId, ...signed } })
       writeSession(session)
       set({ session })
+      // Nimiq Pay signs with its active account. If that isn't the one shown here, follow it so balances,
+      // payments and this session all refer to the same wallet.
+      if (!sameAddress(session.address, address)) useWallet.getState().chooseAccount(session.address)
       return session
     } finally {
       set({ signingIn: false })

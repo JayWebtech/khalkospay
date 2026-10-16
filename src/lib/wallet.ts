@@ -144,8 +144,11 @@ export const useWallet = create<WalletState>((set, get) => ({
 
   chooseAccount: (address) => {
     if (sameAddress(address, get().address)) return
+    // An account learned from a signature may not be in the last listAccounts result; remember it too.
+    const accounts = get().accounts.some((a) => sameAddress(a, address)) ? get().accounts : [...get().accounts, address]
+    write(ACCOUNTS_KEY, JSON.stringify(accounts))
     write(ADDRESS_KEY, address)
-    set({ address, balanceLuna: null })
+    set({ address, accounts, balanceLuna: null })
     void get().refreshBalance()
   },
 

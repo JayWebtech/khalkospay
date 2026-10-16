@@ -7,7 +7,7 @@ export const authRouter = Router()
 const limit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false })
 
 authRouter.post('/challenge', limit, (req, res) => {
-  res.status(201).json(createChallenge(req.body?.address))
+  res.status(201).json(createChallenge())
 })
 
 authRouter.post('/verify', limit, (req, res) => {

@@ -48,7 +48,6 @@ export function GiftCardsPage() {
       <PageHeader
         title="Gift cards"
         description="Wrap NIM with a message"
-        back="/"
         action={
           <ButtonLink to="/gifts/new" size="lg">
             <Plus data-icon="inline-start" />

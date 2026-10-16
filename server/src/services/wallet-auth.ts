@@ -3,7 +3,6 @@ import type { Request } from 'express'
 import { PublicKey, Signature } from '@nimiq/core'
 import { config } from '../config'
 import { HttpError } from '../lib/http-error'
-import { normalizeAddress } from './nimiq'
 
 /**
  * Proves a caller owns a Nimiq address: the app signs a one-time challenge with the wallet
@@ -17,7 +16,6 @@ const SESSION_TTL_MS = 24 * 60 * 60_000
 const MAX_OPEN_CHALLENGES = 10_000
 
 interface Challenge {
-  address: string
   message: string
   expiresAt: number
 }
@@ -35,13 +33,11 @@ function pruneChallenges(now: number) {
   for (const [id, c] of challenges) if (c.expiresAt <= now) challenges.delete(id)
 }
 
-export function createChallenge(rawAddress: unknown) {
-  let address: string
-  try {
-    address = normalizeAddress(String(rawAddress ?? ''))
-  } catch {
-    throw new HttpError(400, 'Connect your wallet first', 'INVALID_ADDRESS')
-  }
+/**
+ * The challenge names no wallet: Nimiq Pay signs with whichever account is active there, which can differ
+ * from the one the app last listed, so the signature itself tells us who signed in.
+ */
+export function createChallenge() {
   const now = Date.now()
   pruneChallenges(now)
   if (challenges.size >= MAX_OPEN_CHALLENGES) throw new HttpError(503, 'Too many sign-ins right now. Try again in a minute.', 'AUTH_BUSY')
@@ -50,13 +46,12 @@ export function createChallenge(rawAddress: unknown) {
   const message = [
     'Sign in to KhalkosPay',
     '',
-    `Wallet: ${address}`,
     `Nonce: ${randomBytes(12).toString('hex')}`,
     `Expires: ${new Date(expiresAt).toISOString()}`,
     '',
     'This proves the wallet is yours. It does not move any NIM.',
   ].join('\n')
-  challenges.set(id, { address, message, expiresAt })
+  challenges.set(id, { message, expiresAt })
   return { challengeId: id, message, expiresAt: new Date(expiresAt).toISOString() }
 }
 
@@ -100,8 +95,7 @@ export function verifyChallenge(input: { challengeId: unknown; publicKey: unknow
   }
   const signer = verifySignedMessage(challenge.message, String(input.publicKey ?? ''), String(input.signature ?? ''))
   if (!signer) throw new HttpError(401, "That signature doesn't match the sign-in request", 'BAD_SIGNATURE')
-  if (signer !== challenge.address) throw new HttpError(401, 'That signature came from a different wallet', 'WRONG_WALLET')
-  return issueSession(challenge.address)
+  return issueSession(signer)
 }
 
 /** The wallet address a request has proven it owns, or a 401. */

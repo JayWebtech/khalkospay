@@ -1,4 +1,4 @@
-import { CircleAlert, ShieldCheck } from 'lucide-react'
+import { CircleAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { GiftCardArt } from '@/components/gift-card-art'
@@ -82,7 +82,7 @@ export function GiftCardCreatePage() {
       const tx = await wallet.pay(card.funding)
       setPhase('reporting')
       // If reporting fails, the server still finds the payment by its memo.
-      await reportFunding(card.id, tx).catch(() => {})
+      await reportFunding(card.id, tx).catch(() => { })
       navigate(`/gifts/${card.id}`, { replace: true })
     } catch (e) {
       setError(isUserRejection(e) ? CANCELLED : errorMessage(e))
@@ -158,13 +158,16 @@ export function GiftCardCreatePage() {
             )}
           </Field>
           <Field>
-            <FieldLabel htmlFor="gift-code">Secret code</FieldLabel>
+            <FieldLabel htmlFor="gift-code">Redeem code</FieldLabel>
             <Input
               id="gift-code"
               autoComplete="off"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
               placeholder={`At least ${minCodeLength} characters`}
               value={code}
-              onChange={(e) => setCode(e.target.value)}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
             />
             <FieldDescription>Share this separately from the link. Anyone with both can claim the gift.</FieldDescription>
           </Field>
@@ -185,11 +188,6 @@ export function GiftCardCreatePage() {
           </Field>
         </FieldGroup>
 
-        <p className="flex gap-2 text-sm text-muted-foreground">
-          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
-          Your NIM goes to KhalkosPay's deposit address and stays there until someone claims the gift with your code.
-        </p>
-
         {error && (
           <Alert variant={error === CANCELLED ? 'default' : 'destructive'}>
             <CircleAlert />
@@ -197,7 +195,7 @@ export function GiftCardCreatePage() {
           </Alert>
         )}
 
-        <Button size="xl" disabled={!ready || phase !== 'idle'} onClick={() => void createAndPay()} className={cn(phase !== 'idle' && 'cursor-progress')}>
+        <Button size="xl" variant='default' disabled={!ready || phase !== 'idle'} onClick={() => void createAndPay()} className={cn(phase !== 'idle' && 'cursor-progress')}>
           {phase !== 'idle' && <Spinner data-icon="inline-start" />}
           {PHASE_LABEL[phase]}
         </Button>

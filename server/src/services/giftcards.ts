@@ -43,8 +43,9 @@ function scryptKey(code: string, salt: Buffer, params: { N: number; r: number; p
   )
 }
 
+/** Codes are uppercase everywhere, so the server stores and checks them that way whatever the client sends. */
 function normalizeCode(code: unknown): string {
-  return typeof code === 'string' ? code.normalize('NFKC').trim() : ''
+  return typeof code === 'string' ? code.normalize('NFKC').trim().toUpperCase() : ''
 }
 
 /** Stored as `scrypt$N$r$p$salt$key` so the cost can be raised later without breaking existing cards. */
