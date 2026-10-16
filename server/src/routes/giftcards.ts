@@ -9,6 +9,7 @@ import {
   findCard,
   giftConfigDto,
   listSenderCards,
+  lookupCards,
   reclaimCard,
   senderCardDto,
   submitFunding,
@@ -51,8 +52,9 @@ giftCardsRouter.post('/', createLimit, async (req, res) => {
   if (!senderAddress || !nimAmount || !redeemCode) {
     throw new HttpError(400, 'senderAddress, nimAmount and redeemCode are required', 'INVALID_REQUEST')
   }
-  const card = await createCard({ senderAddress, nimAmount, redeemCode, message, template, recipientEmail, anonymous, senderName })
-  res.status(201).json(cardDto(card))
+  const { card, senderKey } = await createCard({ senderAddress, nimAmount, redeemCode, message, template, recipientEmail, anonymous, senderName })
+  // The only time the sender key leaves the server; the creating device keeps it to manage the gift.
+  res.status(201).json({ ...cardDto(card), senderKey })
 })
 
 // The sender's gifts carry their links, which are half of what it takes to claim, so this needs a signed-in wallet.
@@ -61,9 +63,14 @@ giftCardsRouter.get('/', async (req, res) => {
   res.json((await listSenderCards(address)).map(senderCardDto))
 })
 
+giftCardsRouter.post('/lookup', async (req, res) => {
+  res.json((await lookupCards(req.body?.ids)).map(cardDto))
+})
+
 giftCardsRouter.post('/:id/reclaim', async (req, res) => {
-  const address = requireWallet(req)
-  res.json(cardDto(await reclaimCard(req.params.id, address)))
+  const senderKey = req.get('x-gift-sender-key')
+  const proof = senderKey ? { senderKey } : { address: requireWallet(req) }
+  res.json(cardDto(await reclaimCard(req.params.id, proof)))
 })
 
 // Gift codes are short, so throttle code lookups to keep anyone from walking the code space.

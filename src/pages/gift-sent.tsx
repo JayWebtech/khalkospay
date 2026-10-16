@@ -13,7 +13,7 @@ import { Spinner } from '@/components/ui/spinner'
 import type { GiftCard } from '@/lib/api'
 import { formatNim } from '@/lib/format'
 import { copyText } from '@/lib/clipboard'
-import { giftMiniAppLink, giftShareText, hasPendingFunding, reclaimGift, reportFunding, useGiftCard } from '@/lib/gifts'
+import { giftMiniAppLink, giftShareText, hasPendingFunding, reclaimGift, reportFunding, senderKeyFor, useGiftCard } from '@/lib/gifts'
 import { cn } from '@/lib/utils'
 import { useWalletSession } from '@/lib/wallet-session'
 import { errorMessage, isUserRejection, useWallet } from '@/lib/wallet'
@@ -220,14 +220,19 @@ function TakeBack({ card, onDone }: { card: GiftCard; onDone: (card: GiftCard) =
   const [phase, setPhase] = useState<TakeBackPhase>('idle')
   const [error, setError] = useState<string | null>(null)
   const amount = formatNim(card.nimAmount, 5)
+  // Made on this phone: its sender key is enough. Made elsewhere: prove the wallet with a signature.
+  const needsSignature = !senderKeyFor(card.id)
 
   async function takeBack() {
     setError(null)
     try {
-      setPhase('signing')
-      const session = await signIn()
+      let session = null
+      if (needsSignature) {
+        setPhase('signing')
+        session = await signIn()
+      }
       setPhase('reclaiming')
-      const next = await reclaimGift(session, card.id)
+      const next = await reclaimGift(card.id, session)
       setOpen(false)
       onDone(next)
     } catch (e) {
@@ -241,7 +246,7 @@ function TakeBack({ card, onDone }: { card: GiftCard; onDone: (card: GiftCard) =
 
   return (
     <Drawer open={open} onOpenChange={(next) => phase === 'idle' && setOpen(next)}>
-      <DrawerTrigger render={<Button size="xl" variant="ghost" className="text-destructive" disabled={wallet.status !== 'connected'} />}>
+      <DrawerTrigger render={<Button size="xl" variant="ghost" className="text-destructive" disabled={needsSignature && wallet.status !== 'connected'} />}>
         <Undo2 data-icon="inline-start" />
         Take gift back
       </DrawerTrigger>
@@ -253,7 +258,12 @@ function TakeBack({ card, onDone }: { card: GiftCard; onDone: (card: GiftCard) =
           </DrawerDescription>
         </DrawerHeader>
         <div className="flex flex-col gap-3 px-4 py-2">
-          <p className="text-sm text-muted-foreground">Nimiq Pay asks you to sign a message first. It proves this wallet sent the gift and doesn't move any NIM.</p>
+          {needsSignature && (
+            <p className="text-sm text-muted-foreground">
+              This gift was made on another device, so Nimiq Pay asks you to sign a message first. It proves your wallet sent the gift and doesn't move
+              any NIM.
+            </p>
+          )}
           {error && (
             <Alert variant="destructive">
               <CircleAlert />

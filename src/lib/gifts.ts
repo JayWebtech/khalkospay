@@ -77,7 +77,37 @@ export function createGiftCard(input: {
   anonymous: boolean
   senderName?: string
 }) {
-  return api<GiftCard>('/api/giftcards', { json: input })
+  return api<GiftCard & { senderKey: string }>('/api/giftcards', { json: input })
+}
+
+// Gifts created on this device, with the sender key that lets it see and take them back without signing.
+const SENT_KEY = 'khalkospay.sentGifts'
+
+interface LocalGift {
+  id: string
+  senderKey: string
+}
+
+function readSentGifts(): LocalGift[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(SENT_KEY) || '[]')
+    return Array.isArray(list) ? list.filter((g) => g && typeof g.id === 'string' && typeof g.senderKey === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+export function rememberSentGift(id: string, senderKey: string) {
+  try {
+    const rest = readSentGifts().filter((g) => g.id !== id)
+    localStorage.setItem(SENT_KEY, JSON.stringify([{ id, senderKey }, ...rest].slice(0, 50)))
+  } catch {
+    // Without storage the gift still works; finding it again later needs a wallet sign-in.
+  }
+}
+
+export function senderKeyFor(id: string): string | null {
+  return readSentGifts().find((g) => g.id === id)?.senderKey ?? null
 }
 
 /** Where KhalkosPay is hosted, e.g. khalkospay.app. Nimiq Pay deep links name the mini app by domain. */
@@ -117,20 +147,31 @@ export function claimGiftCard(id: string, input: { redeemCode: string; claimerAd
   return api<GiftCard>(`/api/giftcards/${id}/claim`, { json: input })
 }
 
-/** The signed-in wallet's sent gifts, refreshed every 20 seconds while shown. */
+/**
+ * Gifts you've sent: the ones created on this device (no signing needed), plus, when signed in, the ones the
+ * signing wallet sent from anywhere. Refreshed every 20 seconds while shown.
+ */
 export function useMyGifts(session: Session | null) {
   const [state, setState] = useState<{ gifts: SentGift[] | null; error: string | null }>({ gifts: null, error: null })
   useEffect(() => {
-    if (!session) {
-      setState({ gifts: null, error: null })
-      return
-    }
     let alive = true
-    const load = () =>
-      authedApi<SentGift[]>(session, '/api/giftcards').then(
-        (gifts) => alive && setState({ gifts, error: null }),
-        (e) => alive && setState((s) => ({ gifts: s.gifts, error: messageOf(e) })),
-      )
+    const load = async () => {
+      const ids = readSentGifts().map((g) => g.id)
+      const [local, signed] = await Promise.allSettled([
+        ids.length ? api<SentGift[]>('/api/giftcards/lookup', { json: { ids } }) : Promise.resolve([]),
+        session ? authedApi<SentGift[]>(session, '/api/giftcards') : Promise.resolve([]),
+      ])
+      if (!alive) return
+      const byId = new Map<string, SentGift>()
+      for (const result of [local, signed]) {
+        if (result.status === 'fulfilled') for (const g of result.value) byId.set(g.id, { ...byId.get(g.id), ...g })
+      }
+      const failed = [local, signed].find((r) => r.status === 'rejected')
+      setState((prev) => ({
+        gifts: failed && byId.size === 0 ? prev.gifts : [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        error: failed ? messageOf((failed as PromiseRejectedResult).reason) : null,
+      }))
+    }
     void load()
     const timer = setInterval(load, 20_000)
     return () => {
@@ -141,7 +182,11 @@ export function useMyGifts(session: Session | null) {
   return state
 }
 
-export function reclaimGift(session: Session, id: string) {
+/** Takes a gift back with this device's sender key, or a wallet session when the gift was made elsewhere. */
+export function reclaimGift(id: string, session: Session | null) {
+  const senderKey = senderKeyFor(id)
+  if (senderKey) return api<GiftCard>(`/api/giftcards/${id}/reclaim`, { json: {}, headers: { 'X-Gift-Sender-Key': senderKey } })
+  if (!session) throw new Error('Sign in with the wallet that sent this gift to take it back')
   return authedApi<GiftCard>(session, `/api/giftcards/${id}/reclaim`, { json: {} })
 }
 

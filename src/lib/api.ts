@@ -144,10 +144,11 @@ export interface GiftCard {
   reclaimed: boolean
 }
 
+/** A gift in "Gifts you've sent". The extra fields only come with the signed-in, cross-device list. */
 export interface SentGift extends GiftCard {
-  anonymous: boolean
-  recipientEmail: string | null
-  reclaimedAt: string | null
+  anonymous?: boolean
+  recipientEmail?: string | null
+  reclaimedAt?: string | null
 }
 
 export interface GiftConfig {

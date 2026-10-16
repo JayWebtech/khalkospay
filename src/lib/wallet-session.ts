@@ -28,7 +28,6 @@ function writeSession(session: Session | null) {
   }
 }
 
-const sameAddress = (a: string, b: string) => a.replace(/\s/g, '').toUpperCase() === b.replace(/\s/g, '').toUpperCase()
 
 interface SessionStore {
   session: Session | null
@@ -46,7 +45,7 @@ export const useWalletSession = create<SessionStore>((set, get) => ({
     const { address, sign } = useWallet.getState()
     if (!address) throw new Error('Connect your wallet first')
     const existing = get().session
-    if (existing && sameAddress(existing.address, address) && new Date(existing.expiresAt).getTime() > Date.now() + 60_000) return existing
+    if (existing && new Date(existing.expiresAt).getTime() > Date.now() + 60_000) return existing
     set({ signingIn: true })
     try {
       const challenge = await api<{ challengeId: string; message: string }>('/api/auth/challenge', { json: {} })
@@ -54,9 +53,8 @@ export const useWalletSession = create<SessionStore>((set, get) => ({
       const session = await api<Session>('/api/auth/verify', { json: { challengeId: challenge.challengeId, ...signed } })
       writeSession(session)
       set({ session })
-      // Nimiq Pay signs with its active account. If that isn't the one shown here, follow it so balances,
-      // payments and this session all refer to the same wallet.
-      if (!sameAddress(session.address, address)) useWallet.getState().chooseAccount(session.address)
+      // Nimiq Pay may sign with a different account than the one shown here (often the first one). The
+      // session belongs to that signer; the account the user picked for balances and payments stays as it is.
       return session
     } finally {
       set({ signingIn: false })
@@ -69,10 +67,10 @@ export const useWalletSession = create<SessionStore>((set, get) => ({
   },
 }))
 
-/** The session for the connected wallet, if it has signed in. */
-export function useSessionFor(address: string | null) {
+/** The signed-in session, whichever account signed it, while it's still valid. */
+export function useSession() {
   const session = useWalletSession((s) => s.session)
-  return session && address && sameAddress(session.address, address) && new Date(session.expiresAt).getTime() > Date.now() ? session : null
+  return session && new Date(session.expiresAt).getTime() > Date.now() ? session : null
 }
 
 /** Calls an endpoint that needs a signed-in wallet; an expired session is dropped so the UI asks again. */

@@ -3,7 +3,6 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ButtonLink } from '@/components/button-link'
 import { PageHeader } from '@/components/page-header'
-import { WalletNotice } from '@/components/wallet-notice'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -13,10 +12,10 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import type { SentGift } from '@/lib/api'
-import { formatNim, timeAgo } from '@/lib/format'
+import { formatNim, shortAddress, timeAgo } from '@/lib/format'
 import { giftTemplate } from '@/lib/gift-templates'
 import { giftKeyFrom, useMyGifts } from '@/lib/gifts'
-import { useSessionFor, useWalletSession } from '@/lib/wallet-session'
+import { useSession, useWalletSession } from '@/lib/wallet-session'
 import { errorMessage, isUserRejection, useWallet } from '@/lib/wallet'
 
 type Tone = 'success' | 'pending' | 'secondary' | 'destructive'
@@ -42,7 +41,8 @@ function sentStatus(g: SentGift): { label: string; tone: Tone } {
 
 export function GiftCardsPage() {
   const wallet = useWallet()
-  const session = useSessionFor(wallet.address)
+  const session = useSession()
+  const signOut = useWalletSession((s) => s.signOut)
   const { gifts, error } = useMyGifts(session)
 
   return (
@@ -59,23 +59,21 @@ export function GiftCardsPage() {
       />
       <div className="flex flex-1 flex-col gap-4 px-4 pt-2 pb-6">
         <RedeemBox />
-        <WalletNotice purpose="seeing the gifts you've sent" />
-        {wallet.status === 'connected' && !session && <SignInCard />}
 
-        {session && gifts === null && !error && (
+        {gifts === null && !error && (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-20 rounded-2xl" />
             <Skeleton className="h-20 rounded-2xl" />
           </div>
         )}
-        {session && error && !gifts && (
+        {error && !gifts && (
           <Alert variant="destructive">
             <CircleAlert />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
-        {gifts && gifts.length > 0 ? (
+        {gifts && gifts.length > 0 && (
           <section aria-labelledby="sent-heading" className="flex flex-col gap-2">
             <h2 id="sent-heading" className="text-sm font-semibold">
               Gifts you've sent
@@ -88,30 +86,41 @@ export function GiftCardsPage() {
               ))}
             </ul>
           </section>
+        )}
+        {gifts && gifts.length === 0 && (
+          <Empty className="rounded-3xl border border-dashed">
+            <EmptyHeader>
+              <EmptyMedia variant="icon" className="size-12 rounded-2xl bg-accent text-accent-foreground [&_svg]:size-6">
+                <Gift />
+              </EmptyMedia>
+              <EmptyTitle>Send your first gift</EmptyTitle>
+              <EmptyDescription>Pick a design, add NIM and a note, then share the link. They claim it with your secret code.</EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <ButtonLink to="/gifts/new" size="xl">
+                Create gift card
+              </ButtonLink>
+            </EmptyContent>
+          </Empty>
+        )}
+
+        {session ? (
+          <p className="text-sm text-muted-foreground">
+            Also showing gifts sent by {shortAddress(session.address)} from other devices.{' '}
+            <button type="button" onClick={signOut} className="-my-2 py-2 font-medium text-foreground underline underline-offset-4">
+              Sign out
+            </button>
+          </p>
         ) : (
-          (!session || gifts?.length === 0) && (
-            <Empty className="rounded-3xl border border-dashed">
-              <EmptyHeader>
-                <EmptyMedia variant="icon" className="size-12 rounded-2xl bg-accent text-accent-foreground [&_svg]:size-6">
-                  <Gift />
-                </EmptyMedia>
-                <EmptyTitle>{gifts?.length === 0 ? 'No gifts sent yet' : 'Send your first gift'}</EmptyTitle>
-                <EmptyDescription>Pick a design, add NIM and a note, then share the link. They claim it with your secret code.</EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <ButtonLink to="/gifts/new" size="xl">
-                  Create gift card
-                </ButtonLink>
-              </EmptyContent>
-            </Empty>
-          )
+          wallet.status === 'connected' && <OtherDevicesCard />
         )}
       </div>
     </div>
   )
 }
 
-function SignInCard() {
+/** Optional: gifts made on this phone already show above; signing only finds ones sent from other devices. */
+function OtherDevicesCard() {
   const signIn = useWalletSession((s) => s.signIn)
   const signingIn = useWalletSession((s) => s.signingIn)
   const [error, setError] = useState<string | null>(null)
@@ -126,21 +135,17 @@ function SignInCard() {
   }
 
   return (
-    <section className="flex flex-col items-start gap-3 rounded-3xl bg-card p-5 ring-1 ring-foreground/10" aria-labelledby="signin-heading">
-      <div className="flex items-center gap-2">
-        <KeyRound className="size-5 text-primary" aria-hidden="true" />
-        <h2 id="signin-heading" className="font-semibold">
-          See the gifts you've sent
-        </h2>
-      </div>
+    <section className="flex flex-col items-start gap-2 rounded-3xl p-5 ring-1 ring-foreground/10" aria-labelledby="other-devices-heading">
+      <h2 id="other-devices-heading" className="text-sm font-semibold">
+        Sent gifts from another phone?
+      </h2>
       <p className="text-sm text-muted-foreground">
-        Find your links again, check who claimed what, and take back gifts nobody has claimed. Nimiq Pay asks you to sign a message first. It proves the
-        wallet is yours and doesn't move any NIM.
+        Sign a message in Nimiq Pay to find them. It proves the wallet is yours and doesn't move any NIM or change your account here.
       </p>
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button size="lg" onClick={() => void go()} disabled={signingIn}>
+      <Button size="lg" variant="outline" onClick={() => void go()} disabled={signingIn}>
         {signingIn ? <Spinner data-icon="inline-start" /> : <KeyRound data-icon="inline-start" />}
-        Sign in with Nimiq Pay
+        Find my other gifts
       </Button>
     </section>
   )

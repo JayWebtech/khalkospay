@@ -15,7 +15,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { GiftCard } from '@/lib/api'
 import { formatNim, lunaToNim } from '@/lib/format'
 import { GIFT_TEMPLATES } from '@/lib/gift-templates'
-import { createGiftCard, reportFunding, useGiftConfig } from '@/lib/gifts'
+import { createGiftCard, rememberSentGift, reportFunding, useGiftConfig } from '@/lib/gifts'
 import { cn } from '@/lib/utils'
 import { errorMessage, isUserRejection, useWallet } from '@/lib/wallet'
 
@@ -86,7 +86,7 @@ export function GiftCardCreatePage() {
       let card = lockedCard
       if (!card?.funding || new Date(card.expiresAt).getTime() < Date.now() + 30_000) {
         setPhase('creating')
-        card = await createGiftCard({
+        const created = await createGiftCard({
           senderAddress: wallet.address,
           nimAmount: amount,
           redeemCode: code.trim(),
@@ -97,7 +97,9 @@ export function GiftCardCreatePage() {
           senderName: anonymous ? undefined : senderName.trim(),
         })
         if (!anonymous) saveName(senderName.trim())
-        setLockedCard(card)
+        rememberSentGift(created.id, created.senderKey)
+        card = created
+        setLockedCard(created)
       }
       if (!card.funding) throw new Error('This gift is no longer waiting for payment')
       setPhase('approving')

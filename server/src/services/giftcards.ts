@@ -1,4 +1,4 @@
-import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
 import { GiftCard, GiftCardStatus, LedgerKind, Prisma } from '@prisma/client'
 import { config } from '../config'
 import { HttpError } from '../lib/http-error'
@@ -41,6 +41,8 @@ interface LedgerInput {
   externalRef: string
 }
 
+const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
+
 function scryptKey(code: string, salt: Buffer, params: { N: number; r: number; p: number }, keyLength: number) {
   return new Promise<Buffer>((resolve, reject) =>
     scrypt(code, salt, keyLength, params, (err, key) => (err ? reject(err) : resolve(key))),
@@ -82,6 +84,10 @@ function optionalString(value: unknown, field: string, max: number): string | nu
   return trimmed || null
 }
 
+/**
+ * Creates a gift and a sender key for the creating device. Only its hash is stored, so the key works like
+ * a password the device keeps: it lets that device list and take back the gift without a wallet signature.
+ */
 export async function createCard(input: {
   senderAddress: unknown
   nimAmount: unknown
@@ -91,7 +97,7 @@ export async function createCard(input: {
   recipientEmail?: unknown
   anonymous?: unknown
   senderName?: unknown
-}): Promise<GiftCard> {
+}): Promise<{ card: GiftCard; senderKey: string }> {
   requireEscrow()
   let senderAddress: string
   try {
@@ -137,9 +143,11 @@ export async function createCard(input: {
     anonymous,
     expiresAt: new Date(Date.now() + config.gifts.fundingTtlSeconds * 1000),
   }
+  const senderKey = randomBytes(24).toString('base64url')
   for (let attempt = 0; ; attempt++) {
     try {
-      return await prisma.giftCard.create({ data: { ...data, shareCode: newShareCode() } })
+      const card = await prisma.giftCard.create({ data: { ...data, shareCode: newShareCode(), senderKeyHash: sha256(senderKey) } })
+      return { card, senderKey }
     } catch (e) {
       // A share-code collision is astronomically rare; retry with a fresh one.
       const collided = e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002' && String(e.meta?.target ?? '').includes('shareCode')
@@ -245,6 +253,13 @@ function notClaimable(card: GiftCard): HttpError {
   }
 }
 
+/** Gifts this device created, by the ids it remembers. Ids are unguessable, so knowing one is enough to see it. */
+export async function lookupCards(ids: unknown): Promise<GiftCard[]> {
+  const list = Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string' && UUID.test(id)).slice(0, 50) : []
+  if (list.length === 0) return []
+  return prisma.giftCard.findMany({ where: { id: { in: list } }, orderBy: { createdAt: 'desc' } })
+}
+
 /** Every gift a wallet sent or paid for, newest first; unpaid ones that expired are left out. */
 export async function listSenderCards(address: string): Promise<GiftCard[]> {
   return prisma.giftCard.findMany({
@@ -272,11 +287,22 @@ function notReclaimable(card: GiftCard): HttpError {
  * The sender takes an unclaimed gift back. It is the same conditional move out of ACTIVE that a claim
  * makes, so a claim and a reclaim can never both win; the NIM always returns to the address that paid.
  */
-export async function reclaimCard(id: string, address: string): Promise<GiftCard> {
-  const card = await getCard(id)
-  if (address !== card.senderAddress && address !== card.fundedFrom) {
-    throw new HttpError(403, 'Only the wallet that sent this gift can take it back', 'NOT_SENDER')
+/** Proof the caller sent the gift: the creating device's sender key, or a wallet session for the sender or payer. */
+export type SenderProof = { senderKey: string } | { address: string }
+
+function isSender(card: GiftCard, proof: SenderProof): boolean {
+  if ('senderKey' in proof) {
+    if (!card.senderKeyHash) return false
+    const given = Buffer.from(sha256(proof.senderKey))
+    const stored = Buffer.from(card.senderKeyHash)
+    return given.length === stored.length && timingSafeEqual(given, stored)
   }
+  return proof.address === card.senderAddress || proof.address === card.fundedFrom
+}
+
+export async function reclaimCard(id: string, proof: SenderProof): Promise<GiftCard> {
+  const card = await getCard(id)
+  if (!isSender(card, proof)) throw new HttpError(403, 'Only the wallet that sent this gift can take it back', 'NOT_SENDER')
   if (card.status !== 'ACTIVE') throw notReclaimable(card)
   const reclaiming = await transition(card, 'REFUNDING', { reclaimedAt: new Date(), failureReason: null })
   if (!reclaiming) throw notReclaimable(await getCard(id))

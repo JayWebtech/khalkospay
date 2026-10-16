@@ -119,6 +119,8 @@ model GiftCard {
   amountLuna         BigInt
   message            String         @default("")
   redeemCodeHash     String
+  /// SHA-256 of a random key handed to the creating device; lets that device take the gift back without signing.
+  senderKeyHash      String?
   template           String         @default("default")
   senderAddress      String
   /// Shown to the recipient; null for anonymous gifts.
