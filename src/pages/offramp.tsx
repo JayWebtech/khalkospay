@@ -1,4 +1,4 @@
-import { ArrowDown, BadgeCheck, CircleAlert, Phone, ShieldCheck } from 'lucide-react'
+import { ArrowDown, BadgeCheck, CircleAlert, Phone } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BankPicker } from '@/components/bank-picker'
@@ -315,10 +315,6 @@ function ReviewSheet(props: {
           <Row label="To" value={props.accountName} />
           <Row label="Bank" value={`${shortBankName(bank.name)} ••${props.accountNumber.slice(-4)}`} />
         </dl>
-        <p className="flex gap-2 text-sm text-muted-foreground">
-          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
-          Your NIM goes to KhalkosPay's deposit address, then Paystack pays your bank. If the bank transfer fails, your NIM is refunded automatically.
-        </p>
         {error && (
           <Alert variant={error.startsWith('Payment cancelled') ? 'default' : 'destructive'}>
             <CircleAlert />

@@ -155,7 +155,7 @@ function OrderDetails({ order }: { order: Order }) {
       )}
 
       <div className={cn('grid gap-2', isTerminal(order.status) && 'grid-cols-2')}>
-        <ButtonLink to="/" size="xl" variant="outline">
+        <ButtonLink to="/" size="xl" variant="default">
           Done
         </ButtonLink>
         {isTerminal(order.status) && (
@@ -181,7 +181,7 @@ function PayAgain({ order }: { order: Order }) {
     setError(null)
     try {
       const tx = await wallet.pay(order.deposit)
-      await reportDeposit(order.id, tx).catch(() => {})
+      await reportDeposit(order.id, tx).catch(() => { })
     } catch (e) {
       setError(isUserRejection(e) ? 'Payment cancelled. Nothing left your wallet.' : errorMessage(e))
     } finally {

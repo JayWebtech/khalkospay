@@ -84,7 +84,7 @@ function stepsFor(order: Order): Step[] {
 
   steps.push({
     label: 'Bank transfer',
-    detail: s === 'PAYING_OUT' ? `Paystack is paying ${shortBankName(order.bankName)}` : s === 'COMPLETED' ? 'Sent by Paystack' : 'Starts once your NIM arrives',
+    detail: s === 'PAYING_OUT' ? `Khalkos is paying ${shortBankName(order.bankName)}` : s === 'COMPLETED' ? 'Sent by Khalkos' : 'Starts once your NIM arrives',
     state: s === 'PAYING_OUT' ? 'active' : s === 'COMPLETED' ? 'done' : 'todo',
   })
   steps.push({

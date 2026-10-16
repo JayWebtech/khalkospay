@@ -44,7 +44,7 @@ export function BankPicker({
     >
       <DrawerTrigger
         render={
-          <Button id={id} variant="outline" size="xl" className="w-full justify-between rounded-xl border-foreground/10 bg-transparent px-3.5 font-normal dark:bg-transparent" />
+          <Button id={id} variant="outline" size="xl" className="w-full justify-between rounded-xl border-foreground/10 bg-transparent px-3.5 font-normal dark:border-foreground/10 dark:bg-transparent" />
         }
       >
         <span className={cn('truncate', !selected && 'text-muted-foreground')}>{selected?.name ?? 'Choose your bank'}</span>
