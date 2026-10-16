@@ -3,6 +3,7 @@ import cors from 'cors'
 import express, { ErrorRequestHandler } from 'express'
 import { config } from './config'
 import { HttpError } from './lib/http-error'
+import { authRouter } from './routes/auth'
 import { biteBuddyRouter } from './routes/bitebuddy'
 import { giftCardsRouter } from './routes/giftcards'
 import { offrampRouter } from './routes/offramp'
@@ -27,6 +28,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+app.use('/api/auth', authRouter)
 app.use('/api/offramp', offrampRouter)
 app.use('/api/bitebuddy', biteBuddyRouter)
 app.use('/api/giftcards', giftCardsRouter)

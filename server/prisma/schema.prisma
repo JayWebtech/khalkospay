@@ -132,6 +132,8 @@ model GiftCard {
   claimTxHex         String?
   claimSentAt        DateTime?
   claimedAt          DateTime?
+  /// Set when the sender took an unclaimed gift back; the refund leg then returns the NIM.
+  reclaimedAt        DateTime?
   refundTxHash       String?
   refundTxHex        String?
   refundSentAt       DateTime?

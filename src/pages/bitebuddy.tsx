@@ -79,7 +79,7 @@ function timeLeft(iso: string, now: number) {
 }
 
 function hourLabel(hour: number) {
-  return new Date(2000, 0, 1, hour).toLocaleTimeString([], { hour: 'numeric' })
+  return new Date(2000, 0, 1, hour).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
 export function BiteBuddyPage() {
@@ -373,7 +373,7 @@ function BuddyHome({ pet, config, onChangeBuddy }: { pet: Pet; config: PetConfig
     <div className="flex flex-1 flex-col">
       <PageHeader
         title="BiteBuddy"
-        description="Eat well and your buddy grows strong"
+        description="Your mealtime buddy"
         back="/"
         action={
           !dead && (
@@ -400,7 +400,9 @@ function BuddyHome({ pet, config, onChangeBuddy }: { pet: Pet; config: PetConfig
                 {pet.name}
               </h2>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className={cn('inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold', tint.chip)}>{species.name}</span>
+                <span className={cn('inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold', tint.chip)}>
+                  {pet.name === species.name ? species.kind : species.name}
+                </span>
                 <span className="text-sm text-muted-foreground tabular-nums">Lv {pet.level}</span>
               </div>
               <Badge variant={mood.tone} className="mt-2">
@@ -465,7 +467,7 @@ function BuddyHome({ pet, config, onChangeBuddy }: { pet: Pet; config: PetConfig
 
         {justFed && <LatestMeal meal={justFed} />}
 
-        <TodaySchedule pet={pet} species={species} now={now} />
+        {!dead && <TodaySchedule pet={pet} species={species} now={now} />}
 
         {!dead && <ReminderSettings />}
 
