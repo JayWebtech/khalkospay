@@ -7,6 +7,8 @@ import { flushPendingDeposits } from '@/lib/offramp'
 import { flushPendingRevivals } from '@/lib/pets'
 import { startBalanceRefresh, useWallet } from '@/lib/wallet'
 import { BiteBuddyPage } from '@/pages/bitebuddy'
+import { BuyPage } from '@/pages/buy'
+import { BuyOrderPage } from '@/pages/buy-order'
 import { GiftRedeemPage } from '@/pages/gift-redeem'
 import { SentGiftPage } from '@/pages/gift-sent'
 import { GiftCardCreatePage } from '@/pages/giftcard-create'
@@ -38,6 +40,8 @@ export function App() {
       <main className="flex flex-1 flex-col pb-[calc(4rem+env(safe-area-inset-bottom))]">
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/buy" element={<BuyPage />} />
+          <Route path="/buy/:id" element={<BuyOrderPage />} />
           <Route path="/cash-out" element={<OfframpPage />} />
           <Route path="/cash-out/:id" element={<OfframpOrderPage />} />
           <Route path="/call" element={<VoiceOfframpPage />} />

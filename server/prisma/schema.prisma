@@ -48,6 +48,17 @@ enum PetRevivalStatus {
   REFUNDED
 }
 
+enum OnrampStatus {
+  AWAITING_PAYMENT
+  PAID
+  SENDING
+  COMPLETED
+  EXPIRED
+  NEEDS_REVIEW
+  /// An operator closed a held purchase after refunding the buyer outside KhalkosPay; no NIM is owed.
+  RESOLVED
+}
+
 enum LedgerKind {
   DEPOSIT
   PAYOUT
@@ -98,6 +109,8 @@ model LedgerEntry {
   giftCard    GiftCard?     @relation(fields: [giftCardId], references: [id])
   revivalId   String?
   revival     PetRevival?   @relation(fields: [revivalId], references: [id])
+  onrampOrderId String?
+  onrampOrder   OnrampOrder? @relation(fields: [onrampOrderId], references: [id])
   kind        LedgerKind
   asset       String
   amount      BigInt
@@ -109,6 +122,45 @@ model LedgerEntry {
   @@unique([orderId, kind])
   @@unique([giftCardId, kind])
   @@unique([revivalId, kind])
+  @@unique([onrampOrderId, kind])
+}
+
+/// A purchase of NIM with local currency through a Bachs checkout, paid out from the treasury.
+model OnrampOrder {
+  id                String       @id @default(uuid())
+  reference         String       @unique
+  /// The account connected in Nimiq Pay, as the buyer chose it.
+  walletAddress     String
+  /// Where the NIM actually goes: the wallet itself, or the owner of a Nimiq Pay HTLC wallet.
+  payoutAddress     String
+  fiatCurrency      String
+  fiatAmount        Decimal      @db.Decimal(24, 4)
+  /// Price of 1 NIM in fiatCurrency when the quote was locked.
+  fiatPerNim        Decimal      @db.Decimal(24, 12)
+  usdPerNim         Decimal      @db.Decimal(24, 12)
+  feeBps            Int
+  nimLuna           BigInt
+  status            OnrampStatus @default(AWAITING_PAYMENT)
+  checkoutId        String?      @unique
+  checkoutUrl       String?
+  checkoutExpiresAt DateTime
+  chargeId          String?
+  paidAmount        Decimal?     @db.Decimal(24, 4)
+  paidAt            DateTime?
+  payoutTxHash      String?      @unique
+  payoutTxHex       String?
+  payoutSentAt      DateTime?
+  completedAt       DateTime?
+  failureReason     String?
+  /// Set when an operator settled a purchase held for review (sent the NIM or closed it as refunded).
+  reviewedAt        DateTime?
+  reviewNote        String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  ledger            LedgerEntry[]
+
+  @@index([walletAddress, createdAt])
+  @@index([status])
 }
 
 model GiftCard {

@@ -9,6 +9,24 @@ export function formatNgn(amount: number) {
   return ngnFormatter.format(amount)
 }
 
+/** Any ISO currency, at its own precision (no decimals for UGX, XOF…). */
+export function formatFiat(amount: string | number, currency: string) {
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 2 }).format(Number(amount))
+  } catch {
+    return `${amount} ${currency}`
+  }
+}
+
+/** A per-NIM price, which can be a small fraction (0.129 KES), so 4 significant digits instead of 2 decimals. */
+export function formatRate(amount: number, currency: string) {
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumSignificantDigits: 4 }).format(amount)
+  } catch {
+    return `${amount.toPrecision(4)} ${currency}`
+  }
+}
+
 export function formatNim(amount: number | string, maxDecimals = 2) {
   return `${Number(amount).toLocaleString('en-US', { maximumFractionDigits: maxDecimals })} NIM`
 }

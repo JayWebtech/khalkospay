@@ -44,7 +44,27 @@ export const config = {
     revivePaymentTtlSeconds: num('PET_REVIVE_PAYMENT_TTL_SECONDS', 1800),
     revivePaymentLookupTimeoutSeconds: num('PET_REVIVE_LOOKUP_TIMEOUT_SECONDS', 1800),
   },
+  onramp: {
+    feeBps: num('ONRAMP_FEE_BPS', 200),
+    minUsd: num('ONRAMP_MIN_USD', 1),
+    maxUsd: num('ONRAMP_MAX_USD', 500),
+    checkoutTtlMinutes: num('ONRAMP_CHECKOUT_TTL_MINUTES', 30),
+    /** NIM always kept back from sale, on top of what the treasury owes. */
+    reserveNim: process.env.ONRAMP_RESERVE_NIM || '0',
+    fxUrl: process.env.FX_RATES_URL || 'https://open.er-api.com/v6/latest/USD',
+    usdPerNimOverride: process.env.ONRAMP_USD_PER_NIM_OVERRIDE || '',
+  },
+  bachs: {
+    secretKey: process.env.BACHS_SECRET_KEY || '',
+    webhookSecret: process.env.BACHS_WEBHOOK_SECRET || '',
+    /** Live keys talk to production, everything else to the sandbox, unless overridden. */
+    baseUrl:
+      process.env.BACHS_BASE_URL ||
+      ((process.env.BACHS_SECRET_KEY || '').startsWith('sk_live_') ? 'https://api.bachs.io' : 'https://sandbox-api.bachs.io'),
+  },
   authSecret: process.env.AUTH_SECRET || '',
+  /** Bearer token for the operator endpoints under /api/admin. Empty or shorter than 32 characters = those endpoints are off. */
+  adminToken: process.env.ADMIN_TOKEN || '',
   /** Public host of the mini app (e.g. khalkospay.app), used to build Nimiq Pay links in emails. */
   miniAppUrl: (process.env.MINIAPP_URL || '').replace(/^https?:\/\//, '').replace(/\/+$/, ''),
   resend: {

@@ -1,4 +1,4 @@
-import { ArrowUpRight, ChevronDown, Gift, Phone, Salad, Wallet } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, ChevronDown, Gift, Salad, Wallet } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { AccountSheet } from '@/components/account-sheet'
@@ -110,13 +110,13 @@ export function HomePage() {
           <p className="text-sm text-hero-muted">Wallet balance</p>
           <BalanceBlock onSwitchAccount={() => setAccountsOpen(true)} />
           <div className="mt-5 grid grid-cols-2 gap-2">
-            <ButtonLink to="/cash-out" size="xl">
+            <ButtonLink to="/buy" size="xl">
+              <ArrowDownLeft data-icon="inline-start" />
+              Buy NIM
+            </ButtonLink>
+            <ButtonLink to="/cash-out" size="xl" variant="hero">
               <ArrowUpRight data-icon="inline-start" />
               Cash out
-            </ButtonLink>
-            <ButtonLink to="/call" size="xl" variant="hero">
-              <Phone data-icon="inline-start" />
-              Call
             </ButtonLink>
           </div>
         </div>

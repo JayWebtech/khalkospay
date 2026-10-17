@@ -239,3 +239,57 @@ export interface PetRevival {
   failureReason: string | null
   expiresAt: string
 }
+
+export interface OnrampCurrency {
+  code: string
+  name: string
+  country: string
+  decimals: number
+  methodLabel: string
+}
+
+export interface OnrampConfig {
+  enabled: boolean
+  network: 'mainnet' | 'testnet'
+  feePercent: number
+  checkoutTtlMinutes: number
+  currencies: OnrampCurrency[]
+}
+
+export interface OnrampQuote {
+  currency: string
+  amount: string
+  nimAmount: string
+  fiatPerNim: number
+  feePercent: number
+  feeAmount: string
+  minAmount: string
+  maxAmount: string
+  availableNim: string
+  belowMinimum: boolean
+  aboveMaximum: boolean
+  exceedsStock: boolean
+}
+
+export type OnrampStatus = 'AWAITING_PAYMENT' | 'PAID' | 'SENDING' | 'COMPLETED' | 'EXPIRED' | 'NEEDS_REVIEW' | 'RESOLVED'
+
+export interface OnrampOrder {
+  id: string
+  reference: string
+  status: OnrampStatus
+  currency: string
+  amount: string
+  nimAmount: string
+  fiatPerNim: number
+  feePercent: number
+  walletAddress: string
+  payoutAddress: string
+  checkoutUrl: string | null
+  checkoutExpiresAt: string
+  paidAmount: string | null
+  paidAt: string | null
+  payoutTxHash: string | null
+  completedAt: string | null
+  failureReason: string | null
+  createdAt: string
+}

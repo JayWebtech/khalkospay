@@ -119,6 +119,12 @@ export async function getTransaction(hash: string): Promise<ChainTransaction | n
   }
 }
 
+/** Spendable balance of an address in Luna (0 for an address that has never been used). */
+export async function getBalanceLuna(address: string): Promise<bigint> {
+  const account = await rpc<{ balance: number }>('getAccountByAddress', [normalizeAddress(address)])
+  return BigInt(account.balance ?? 0)
+}
+
 /** The address is a contract nothing can be paid to (e.g. a staking contract). */
 export class NotPayableError extends Error {}
 
