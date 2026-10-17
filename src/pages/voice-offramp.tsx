@@ -33,7 +33,7 @@ export function VoiceOfframpPage() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <PageHeader title="Voice cash-out" description="Talk to Khalkos, get naira" back="/" />
+      <PageHeader title="Voice cash-out" description="Talk to Khalkos, get naira" />
       <div className="flex flex-1 flex-col gap-5 px-4 pt-2 pb-6">
         {call.phase === 'ended' ? (
           <CallSummary order={call.order} startedAt={call.startedAt} />
@@ -205,7 +205,7 @@ function ApprovalCard({ order, onResult }: { order: Order; onResult: Call['sendW
     setError(null)
     try {
       const tx = await pay(order.deposit)
-      await reportDeposit(order.id, tx).catch(() => {})
+      await reportDeposit(order.id, tx).catch(() => { })
       onResult({ ok: true, tx })
     } catch (e) {
       if (isUserRejection(e)) onResult({ ok: false })
