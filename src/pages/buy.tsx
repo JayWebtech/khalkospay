@@ -162,7 +162,7 @@ export function BuyPage() {
 
         <p className="flex gap-2 text-sm text-muted-foreground">
           <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
-          {selected ? `You'll pay by ${selected.methodLabel.toLowerCase()} on a secure Bachs checkout.` : 'You pay on a secure Bachs checkout.'} Once your payment
+          {selected ? `You'll pay by ${selected.methodLabel.toLowerCase()} on a secure checkout.` : 'You pay on a secure checkout.'} Once your payment
           is confirmed, KhalkosPay sends the NIM straight to your Nimiq Pay wallet.
         </p>
 

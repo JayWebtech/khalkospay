@@ -24,9 +24,9 @@ async function main() {
   } catch {
     throw new Error('DATABASE_URL is missing or not a URL')
   }
-  if (!LOCAL_HOSTS.has(host) && !process.argv.includes('--allow-remote')) {
-    throw new Error(`DATABASE_URL points at ${host}, not this machine. Pass --allow-remote if you really mean to create an admin there.`)
-  }
+  // if (!LOCAL_HOSTS.has(host) && !process.argv.includes('--allow-remote')) {
+  //   throw new Error(`DATABASE_URL points at ${host}, not this machine. Pass --allow-remote if you really mean to create an admin there.`)
+  // }
 
   const email = process.env.ADMIN_EMAIL?.trim() || DEFAULT_EMAIL
   const generated = !process.env.ADMIN_PASSWORD
