@@ -65,6 +65,8 @@ export const config = {
   authSecret: process.env.AUTH_SECRET || '',
   /** Bearer token for the operator endpoints under /api/admin. Empty or shorter than 32 characters = those endpoints are off. */
   adminToken: process.env.ADMIN_TOKEN || '',
+  /** How long an admin dashboard sign-in lasts. */
+  adminSessionHours: num('ADMIN_SESSION_HOURS', 12),
   /** Public host of the mini app (e.g. khalkospay.app), used to build Nimiq Pay links in emails. */
   miniAppUrl: (process.env.MINIAPP_URL || '').replace(/^https?:\/\//, '').replace(/\/+$/, ''),
   resend: {
