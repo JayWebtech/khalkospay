@@ -24,7 +24,7 @@ People across Africa who want to use NIM have four gaps:
 - **Live quote.** Enter an amount in your currency and see exactly how much NIM you get. The price is NIM in USD from CoinGecko, converted with a daily exchange-rate feed (naira uses the same rate as cash-out), minus a 2% fee.
 - **Locked rate.** Your price is held for the 30 minutes the checkout stays open.
 - **Only NIM that's really there.** Each purchase reserves its NIM from the treasury, beyond what KhalkosPay already owes for gifts, cash-outs and other purchases. Two buyers can never be sold the same NIM.
-- **Confirmed with Bachs, then paid on-chain.** Bachs' signed webhook prompts KhalkosPay to check the payment with the Bachs API, and KhalkosPay also checks on its own in case a webhook goes missing. Once the payment is confirmed, the NIM goes straight to your wallet. Short or wrong-currency payments are held for review instead of paid out.
+- **Confirmed with Bachs, then paid on-chain.** Bachs' signed webhook prompts KhalkosPay to check the payment with the Bachs API, and KhalkosPay also checks on its own in case a webhook goes missing. Once the payment is confirmed, the NIM goes straight to your wallet. Short or wrong-currency payments are held for review instead of paid out, and an operator settles them from the [admin dashboard](#admin-dashboard).
 - **Live status.** A purchase page follows each step (rate locked, payment received, NIM sent) and shows the Nimiq transaction.
 
 ### 2. Cash out NIM to naira
@@ -95,6 +95,17 @@ Six food-themed pets, each with its own ability:
 - **Protected codes.** Gift secret codes are stored only as scrypt hashes. Claim attempts are limited per gift and per IP address.
 - **Wallet sign-in by signature.** Signing a message proves you own a wallet without moving any NIM.
 - **Honest about holding funds.** Gift and revive NIM is held by KhalkosPay until it's claimed or refunded, and the app says so.
+- **Accountable operators.** Each operator signs in to the admin dashboard with their own account, and every settled purchase records who settled it and when.
+
+## Admin dashboard
+
+Operators run KhalkosPay from `/admin` on the web app, in any desktop or phone browser. It isn't linked from the mini app, and the mini app never downloads its code.
+
+- **Overview.** Key numbers for every feature and 30-day trends.
+- **Activity.** Searchable tables for Buy NIM, cash-outs (including voice calls), gifts, BiteBuddy pets and revivals, and the full ledger. Open any row to see every field, including its ledger entries. Filtered views keep their filters in the URL, so you can share a link to one.
+- **Settle held purchases.** A Buy NIM purchase that was paid short or in the wrong currency waits for an operator. Send the full NIM, send a pro-rata share of what was paid, or close it as refunded outside KhalkosPay with a note. Each purchase can only be settled once, even if two operators act at the same time. The purchase then shows who settled it, when, and the note.
+- **Sign-in.** Each operator has their own email and password. Passwords are stored as scrypt hashes, sign-in attempts are rate limited, and sessions expire after `ADMIN_SESSION_HOURS` (12 by default).
+- **Scripts.** An optional static `ADMIN_TOKEN` lets scripts call the same API (`/api/admin/...`) with `Authorization: Bearer <token>`. Purchases settled this way are recorded as settled by `admin-token`.
 
 ## Tech stack
 
@@ -151,6 +162,7 @@ Optional keys switch on more features:
 | `ANTHROPIC_API_KEY` | BiteBuddy meal scoring |
 | `RESEND_API_KEY`, `RESEND_FROM`, `MINIAPP_URL` | Gift emails |
 | `BACHS_SECRET_KEY`, `BACHS_WEBHOOK_SECRET` | Buying NIM (`sk_sandbox_` keys use the Bachs sandbox) |
+| `ADMIN_TOKEN` | Script access to the admin API (at least 32 characters, e.g. from `openssl rand -hex 32`) |
 
 ### 3. Set up the database
 
@@ -174,9 +186,20 @@ npm run dev -- --host
 
 In Nimiq Pay, open **Mini Apps** and enter `http://<your-computer's-LAN-IP>:5173` in the Custom URL field.
 
+### 5. Open the admin dashboard
+
+Create an operator login. It uses `ADMIN_EMAIL`, `ADMIN_PASSWORD` (at least 12 characters) and `ADMIN_NAME` from `server/.env`. If `ADMIN_PASSWORD` is empty, a password is generated and printed once. Running it again for the same email resets that password and signs out the account's open sessions.
+
+```bash
+npm --prefix server run admin:seed
+```
+
+Then sign in at [http://localhost:5173/admin](http://localhost:5173/admin).
+
 ### Production notes
 
-- Set `VITE_API_URL` (frontend) to your backend URL, and `VITE_MINIAPP_URL` / `MINIAPP_URL` to your public domain so gift links open inside Nimiq Pay.
+- Set `VITE_API_URL` (frontend) to your backend URL. Set `VITE_MINIAPP_URL` / `MINIAPP_URL` to your public domain alone, for example `khalkospay.vercel.app` rather than a `nimpay.app/miniapps/open/...` link, so gift links open inside Nimiq Pay.
+- The admin dashboard is at `https://<your-frontend>/admin`. `vercel.json` sends every page path to the app, so `/admin` and gift links load when opened directly. To create a login on the production database, run the seed with `DATABASE_URL` pointing at it: `npm --prefix server run admin:seed -- --allow-remote`.
 - Set a fixed `AUTH_SECRET` on the backend so wallet sign-ins survive redeploys.
 - In the Paystack dashboard, set the webhook URL to `https://<your-backend>/api/webhooks/paystack` and turn off transfer OTP so payouts run automatically.
 - In the Bachs dashboard, add a webhook endpoint at `https://<your-backend>/api/webhooks/bachs` for `collection.succeeded`, `collection.underpaid`, `checkout.completed` and `checkout.expired`, and put its signing secret in `BACHS_WEBHOOK_SECRET`. Keep enough NIM in the treasury for purchases; `ONRAMP_RESERVE_NIM` holds some back.
@@ -187,12 +210,14 @@ In Nimiq Pay, open **Mini Apps** and enter `http://<your-computer's-LAN-IP>:5173
 ```
 src/                 Frontend (React mini app)
   pages/             Buy NIM, cash out, voice call, gift cards, BiteBuddy
+  pages/admin/       Admin dashboard (its own bundle, served at /admin)
   components/        Shared UI, pet artwork, account switcher
-  lib/               Wallet, API client, buying, gifts, pets, sign-in session
+  lib/               Wallet, API client, buying, gifts, pets, sign-in session, admin API client
 server/
   prisma/            Database schema and migrations
-  src/routes/        HTTP API (on-ramp, off-ramp, gift cards, BiteBuddy, auth, webhooks)
-  src/services/      Business logic: on-chain verification, payouts, Bachs, Paystack, pricing, emails
+  src/routes/        HTTP API (on-ramp, off-ramp, gift cards, BiteBuddy, auth, admin, webhooks)
+  src/services/      Business logic: on-chain verification, payouts, Bachs, Paystack, pricing, emails, admin sign-in and stats
+  src/scripts/       Treasury key generator, admin login seed
   src/voice/         Voice-call agent bridge (Deepgram + Claude)
 ```
 
