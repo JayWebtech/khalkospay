@@ -1,5 +1,6 @@
 import { getHostNetwork, init, NimiqProviderError } from '@nimiq/mini-app-sdk'
 import { create } from 'zustand'
+import { api } from './api'
 
 type Provider = Awaited<ReturnType<typeof init>>
 
@@ -46,6 +47,19 @@ export async function balanceOf(provider: Provider | null, address: string): Pro
   try {
     const luna = await provider.getBalance(address)
     return typeof luna === 'number' && Number.isFinite(luna) ? luna : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The balance Nimiq Pay shows, read by the server. Nimiq Pay keeps a wallet's NIM in HTLCs the wallet funded, which its
+ * own getBalance leaves out. Null when the server can't answer or runs on a different network than Nimiq Pay.
+ */
+async function walletBalanceFromServer(address: string, network: string): Promise<number | null> {
+  try {
+    const r = await api<{ network: string; balanceLuna: number }>(`/api/wallet/balance?address=${encodeURIComponent(address)}`)
+    return r.network === network && Number.isFinite(r.balanceLuna) ? r.balanceLuna : null
   } catch {
     return null
   }
@@ -112,23 +126,28 @@ export const useWallet = create<WalletState>((set, get) => ({
   refreshBalance: async () => {
     const { provider, address } = get()
     clearTimeout(retryTimer)
-    if (!provider || !address || typeof provider.getBalance !== 'function') return
+    if (!provider || !address) return
     const retry = (ms: number) => {
       retryTimer = setTimeout(() => void get().refreshBalance(), ms)
     }
-    // Before consensus Nimiq Pay can't know the balance; say so instead of showing a misleading number.
-    if (!(await hasConsensus(provider))) {
-      set({ syncing: true })
-      retry(3_000)
-      return
+    const network = getHostNetwork() ?? get().network
+    let luna = await walletBalanceFromServer(address, network)
+    if (luna === null) {
+      // Without the server, Nimiq Pay can still tell the account's own balance (HTLCs left out) once it's synced.
+      if (typeof provider.getBalance !== 'function') return
+      if (!(await hasConsensus(provider))) {
+        set({ syncing: true })
+        retry(3_000)
+        return
+      }
+      luna = await balanceOf(provider, address)
     }
-    const luna = await balanceOf(provider, address)
     if (!sameAddress(get().address, address)) return
     if (luna === null) {
       retry(10_000)
       return
     }
-    set({ balanceLuna: luna, syncing: false, network: getHostNetwork() ?? get().network })
+    set({ balanceLuna: luna, syncing: false, network })
   },
 
   pay: async ({ recipient, valueLuna, data }) => {

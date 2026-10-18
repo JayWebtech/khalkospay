@@ -9,6 +9,7 @@ import { biteBuddyRouter } from './routes/bitebuddy'
 import { giftCardsRouter } from './routes/giftcards'
 import { offrampRouter } from './routes/offramp'
 import { onrampRouter } from './routes/onramp'
+import { walletRouter } from './routes/wallet'
 import { webhooksRouter } from './routes/webhooks'
 import { startGiftCardWorker } from './services/giftcards'
 import { canSendFromTreasury, checkRpcNetwork, giftEscrowAddress, treasuryAddress, WrongNetworkError } from './services/nimiq'
@@ -37,6 +38,7 @@ app.use('/api/onramp', onrampRouter)
 app.use('/api/bitebuddy', biteBuddyRouter)
 app.use('/api/giftcards', giftCardsRouter)
 app.use('/api/admin', adminRouter)
+app.use('/api/wallet', walletRouter)
 
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof HttpError) {

@@ -18,6 +18,8 @@ interface RawRpcTransaction {
   hash: string
   from: string
   to: string
+  /** Account type of the recipient: 0 basic, 1 vesting, 2 HTLC, 3 staking. */
+  toType?: number
   value: number
   recipientData: string
   confirmations?: number
@@ -179,6 +181,7 @@ export class NotPayableError extends Error {}
 
 interface RawAccount {
   type: 'basic' | 'vesting' | 'htlc' | 'staking' | string
+  balance?: number
   /** HTLC: the party that funded it and gets it back on timeout. Nimiq Pay wallets keep funds in an HTLC whose sender is the user's own key. */
   sender?: string
   /** Vesting contract owner. */
@@ -201,6 +204,29 @@ export async function resolvePayoutAddress(address: string): Promise<string> {
     current = normalizeAddress(owner)
   }
   throw new NotPayableError(`Couldn't find a wallet account behind ${address}`)
+}
+
+const HTLC_ACCOUNT_TYPE = 2
+
+/**
+ * The balance Nimiq Pay shows for a wallet: the account itself plus the HTLCs it funded that still hold NIM. Nimiq Pay
+ * moves NIM that arrives into such an HTLC (sender = the wallet, refunded to it on timeout), so the account alone often
+ * reads 0 while the wallet holds NIM. Only the latest 50 transactions are searched for those HTLCs.
+ */
+export async function getWalletBalanceLuna(address: string): Promise<bigint> {
+  const owner = normalizeAddress(address)
+  const [account, txs] = await Promise.all([
+    rpc<RawAccount>('getAccountByAddress', [owner]),
+    rpc<RawRpcTransaction[]>('getTransactionsByAddress', [owner, 50, null]),
+  ])
+  const funded = txs.filter((tx) => tx.toType === HTLC_ACCOUNT_TYPE && normalizeAddress(tx.from) === owner).map((tx) => normalizeAddress(tx.to))
+  const held = await Promise.all(
+    [...new Set(funded)].map(async (contract) => {
+      const htlc = await rpc<RawAccount>('getAccountByAddress', [contract])
+      return htlc.type === 'htlc' && htlc.sender && normalizeAddress(htlc.sender) === owner ? BigInt(htlc.balance ?? 0) : 0n
+    }),
+  )
+  return held.reduce((sum, luna) => sum + luna, BigInt(account.balance ?? 0))
 }
 
 /** Signs a payment from the treasury without broadcasting, so the hash can be persisted first. */
