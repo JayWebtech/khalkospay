@@ -201,6 +201,7 @@ Then sign in at [http://localhost:5173/admin](http://localhost:5173/admin).
 - Set `VITE_API_URL` (frontend) to your backend URL. Set `VITE_MINIAPP_URL` / `MINIAPP_URL` to your public domain alone, for example `khalkospay.vercel.app` rather than a `nimpay.app/miniapps/open/...` link, so gift links open inside Nimiq Pay.
 - The admin dashboard is at `https://<your-frontend>/admin`. `vercel.json` sends every page path to the app, so `/admin` and gift links load when opened directly. To create a login on the production database, run the seed with `DATABASE_URL` pointing at it: `npm --prefix server run admin:seed -- --allow-remote`.
 - Set a fixed `AUTH_SECRET` on the backend so wallet sign-ins survive redeploys.
+- When you move to `NIMIQ_NETWORK=mainnet`, set `NIMIQ_RPC_URL` to a mainnet node, or remove it so the mainnet default (`https://rpc.nimiqwatch.com`) applies. If the node is on a different network, the server logs a WRONG NETWORK error at startup and stops all treasury reads, sales and payouts.
 - In the Paystack dashboard, set the webhook URL to `https://<your-backend>/api/webhooks/paystack` and turn off transfer OTP so payouts run automatically.
 - In the Bachs dashboard, add a webhook endpoint at `https://<your-backend>/api/webhooks/bachs` for `collection.succeeded`, `collection.underpaid`, `checkout.completed` and `checkout.expired`, and put its signing secret in `BACHS_WEBHOOK_SECRET`. Keep enough NIM in the treasury for purchases; `ONRAMP_RESERVE_NIM` holds some back.
 - Run `npx prisma migrate deploy` on each deploy.

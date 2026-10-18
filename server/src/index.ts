@@ -11,7 +11,7 @@ import { offrampRouter } from './routes/offramp'
 import { onrampRouter } from './routes/onramp'
 import { webhooksRouter } from './routes/webhooks'
 import { startGiftCardWorker } from './services/giftcards'
-import { canSendFromTreasury, treasuryAddress } from './services/nimiq'
+import { canSendFromTreasury, checkRpcNetwork, treasuryAddress, WrongNetworkError } from './services/nimiq'
 import { startOfframpWorker } from './services/offramp'
 import { onrampEnabled, startOnrampWorker } from './services/onramp'
 import { startPetWorker } from './services/pets'
@@ -43,6 +43,10 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     res.status(err.status).json({ message: err.message, code: err.code })
     return
   }
+  if (err instanceof WrongNetworkError) {
+    res.status(503).json({ message: 'NIM payments are paused for maintenance. Please try again later.', code: 'NIMIQ_WRONG_NETWORK' })
+    return
+  }
   if (err instanceof PaystackError) {
     console.error('[paystack]', err.httpStatus, err.message)
     res.status(502).json({ message: 'Our bank partner is unavailable right now. Please try again shortly.', code: 'PAYSTACK_ERROR' })
@@ -63,6 +67,15 @@ attachVoiceServer(server, isOriginAllowed)
 server.listen(config.port, () => {
   console.log(`KhalkosPay server listening on :${config.port}`)
   console.log(`  Nimiq ${config.nimiq.network} via ${config.nimiq.rpcUrl || '(no RPC configured)'}`)
+  // The banner for a node on the wrong chain is logged by the check itself, which also runs before every RPC call.
+  if (config.nimiq.rpcUrl) {
+    checkRpcNetwork().then(
+      () => console.log(`  Nimiq RPC confirmed on ${config.nimiq.network}`),
+      (e) => {
+        if (!(e instanceof WrongNetworkError)) console.warn(`[nimiq] Couldn't confirm the RPC's network yet (${e.message}); it's checked again before the next RPC call`)
+      },
+    )
+  }
   console.log(`  Deposit address: ${treasuryAddress ?? 'NOT CONFIGURED'}${canSendFromTreasury ? ' (refunds automatic)' : ' (refunds manual)'}`)
   console.log(`  Paystack: ${config.paystackSecretKey ? 'configured' : 'NOT CONFIGURED'} · Deepgram: ${config.deepgramApiKey ? 'configured' : 'NOT CONFIGURED'}`)
   console.log(`  Buy NIM (Bachs): ${onrampEnabled() ? `on via ${config.bachs.baseUrl}${config.bachs.webhookSecret ? '' : ' · BACHS_WEBHOOK_SECRET not set, so payments are found by polling only'}` : 'NOT CONFIGURED'}`)

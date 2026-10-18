@@ -35,10 +35,47 @@ class RpcError extends Error {
   }
 }
 
-let rpcId = 0
+/** NIMIQ_RPC_URL serves a different chain than NIMIQ_NETWORK, so nothing is read from or sent through it. */
+export class WrongNetworkError extends Error {}
 
-async function rpc<T>(method: string, params: unknown[]): Promise<T> {
+/** Albatross block `network` names and the network ids transactions are signed with. */
+const NETWORKS: Record<string, { id: number; label: string }> = {
+  MainAlbatross: { id: 24, label: 'mainnet' },
+  TestAlbatross: { id: 5, label: 'testnet' },
+  DevAlbatross: { id: 6, label: 'devnet' },
+}
+
+let rpcId = 0
+let networkCheck: Promise<void> | null = null
+
+/**
+ * Confirms the RPC node is on NIMIQ_NETWORK. A node answers for any address whichever chain it's on, so a
+ * mainnet server pointed at a testnet node would read testnet balances and deposits and sign payouts that
+ * node rejects. A mismatch sticks until restart; a lookup that fails is tried again on the next call.
+ */
+export function checkRpcNetwork(): Promise<void> {
+  networkCheck ??= (async () => {
+    const block = await rpc<{ network?: string }>('getLatestBlock', [false], false)
+    const actual = NETWORKS[block.network ?? '']
+    if (actual?.id === config.nimiq.networkId) return
+    const where = actual ? `a ${actual.label} node` : `on an unrecognised network (${block.network ?? 'none reported'})`
+    const error = new WrongNetworkError(`NIMIQ_NETWORK is ${config.nimiq.network} but NIMIQ_RPC_URL ${config.nimiq.rpcUrl} is ${where}`)
+    console.error(
+      `\n[nimiq] !!! WRONG NETWORK: ${error.message}.\n` +
+        '[nimiq] !!! Treasury reads, sales and payouts are stopped. Point NIMIQ_RPC_URL at a ' +
+        `${config.nimiq.network} node (or unset it on mainnet) and restart.\n`,
+    )
+    throw error
+  })().catch((e) => {
+    if (!(e instanceof WrongNetworkError)) networkCheck = null
+    throw e
+  })
+  return networkCheck
+}
+
+async function rpc<T>(method: string, params: unknown[], requireNetwork = true): Promise<T> {
   if (!config.nimiq.rpcUrl) throw new Error('NIMIQ_RPC_URL is not configured')
+  if (requireNetwork) await checkRpcNetwork()
   const res = await fetch(config.nimiq.rpcUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
