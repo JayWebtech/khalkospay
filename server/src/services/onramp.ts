@@ -180,7 +180,9 @@ export async function createOrder(input: { address: unknown; currency: unknown; 
   if (q.aboveMaximum) throw new HttpError(400, `The maximum per purchase is about ${config.onramp.maxUsd} USD`, 'ABOVE_MAXIMUM')
   if (q.nimLuna <= 0n) throw new HttpError(400, 'That amount is too small to buy any NIM', 'BELOW_MINIMUM')
 
-  const balance = await getBalanceLuna(treasuryAddress!)
+  const balance = await getBalanceLuna(treasuryAddress!);
+  console.log("treasuryAddress", treasuryAddress);
+  console.log("balance", balance);
   const reference = `${ONRAMP_REFERENCE_PREFIX}${randomBytes(8).toString('hex')}`
   const expiresAt = new Date(Date.now() + config.onramp.checkoutTtlMinutes * 60_000)
 
@@ -188,6 +190,7 @@ export async function createOrder(input: { address: unknown; currency: unknown; 
   const order = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${INVENTORY_LOCK})`
     const available = await availableLuna(tx, balance)
+    console.log(available)
     if (q.nimLuna > available) {
       throw new HttpError(409, `KhalkosPay can sell up to ${formatNim(available)} NIM right now. Try a smaller amount.`, 'NOT_ENOUGH_NIM')
     }
@@ -385,7 +388,7 @@ async function advancePayout(order: OnrampOrder) {
     if (!throttled(`payout:${order.id}`, 60_000)) await sendPayout(order)
     return
   }
-  if (!tx && !throttled(`payout:${order.id}`, 60_000)) await broadcastTransaction(order.payoutTxHex).catch(() => {})
+  if (!tx && !throttled(`payout:${order.id}`, 60_000)) await broadcastTransaction(order.payoutTxHex).catch(() => { })
 }
 
 const inFlight = new Set<string>()
