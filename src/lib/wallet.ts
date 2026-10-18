@@ -38,6 +38,22 @@ export function sameAddress(a: string | null | undefined, b: string | null | und
   return Boolean(a && b && a.replace(/\s/g, '').toUpperCase() === b.replace(/\s/g, '').toUpperCase())
 }
 
+/** Every address in the lists, first sighting wins, without duplicates. */
+function mergeAccounts(...lists: string[][]) {
+  const merged: string[] = []
+  for (const a of lists.flat()) if (a && !merged.some((m) => sameAddress(m, a))) merged.push(a)
+  return merged
+}
+
+/** Clears the provider's cached account list, so the next listAccounts asks Nimiq Pay again instead of repeating it. */
+function forgetSharedAccounts(provider: Provider | null) {
+  try {
+    if (typeof provider?.disconnect === 'function') provider.disconnect()
+  } catch {
+    // Older hosts without a cache have nothing to clear.
+  }
+}
+
 export function errorMessage(e: unknown) {
   return e instanceof Error ? e.message : String(e)
 }
@@ -73,7 +89,7 @@ interface WalletState {
   status: WalletStatus
   provider: Provider | null
   address: string | null
-  /** Every account Nimiq Pay shared the last time the user connected. */
+  /** Every account Nimiq Pay has shared on this device, newest share first. Kept until the user disconnects. */
   accounts: string[]
   balanceLuna: number | null
   /** True while Nimiq Pay is still syncing, so a balance would be stale or missing. */
@@ -122,11 +138,15 @@ export const useWallet = create<WalletState>((set, get) => ({
     if (!provider) return
     // Re-listing from a connected wallet (switching accounts) keeps the current one on screen meanwhile.
     set({ status: get().status === 'connected' ? 'connected' : 'connecting', error: null })
+    // The provider repeats its first answer until cleared, which would never let the user share another account.
+    forgetSharedAccounts(provider)
     try {
-      const accounts = (await provider.listAccounts()).filter(Boolean)
-      if (accounts.length === 0) throw new Error('No Nimiq account found in this wallet')
+      const shared = (await provider.listAccounts()).filter(Boolean)
+      if (shared.length === 0) throw new Error('No Nimiq account found in this wallet')
+      // Nimiq Pay shares only the accounts picked this time; keep the ones shared before, so one holding NIM never drops off.
+      const accounts = mergeAccounts(shared, get().accounts, readStoredAccounts())
       const previous = get().address ?? read(ADDRESS_KEY)
-      let address = accounts.find((a) => sameAddress(a, previous)) ?? accounts[0]
+      let address = accounts.find((a) => sameAddress(a, previous)) ?? shared[0]
       // With several accounts and no earlier choice, start on the first one that actually holds NIM.
       if (accounts.length > 1 && !accounts.some((a) => sameAddress(a, previous))) {
         const balances = await Promise.all(accounts.map((a) => balanceOf(provider, a)))
@@ -190,6 +210,7 @@ export const useWallet = create<WalletState>((set, get) => ({
 
   disconnect: () => {
     clearTimeout(retryTimer)
+    forgetSharedAccounts(get().provider)
     write(ADDRESS_KEY, null)
     write(ACCOUNTS_KEY, null)
     set({ address: null, accounts: [], balanceLuna: null, syncing: false, status: get().provider ? 'disconnected' : 'unavailable' })
