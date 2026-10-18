@@ -101,5 +101,6 @@ adminRouter.get('/onramp', async (req, res) => {
 })
 
 adminRouter.post('/onramp/:id/settle', async (req, res) => {
-  res.json(await settleOrder(req.params.id, req.body ?? {}))
+  const { admin } = identity(res)
+  res.json(await settleOrder(req.params.id, req.body ?? {}, admin?.email ?? 'admin-token'))
 })

@@ -185,6 +185,8 @@ export interface AdminOnrampOrder extends OnrampOrder {
   chargeId: string | null
   proRataNimAmount: string | null
   reviewedAt: string | null
+  /** The admin's email, or "admin-token" when settled with the static ADMIN_TOKEN. */
+  reviewedBy: string | null
   reviewNote: string | null
   ledger: AdminLedgerLine[]
 }

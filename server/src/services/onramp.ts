@@ -513,8 +513,9 @@ export interface SettleInput {
  * Settles a purchase held for review, by hand. "send" pays the full or pro-rata NIM through the usual
  * SENDING → payout path; "close" records that the buyer was refunded outside KhalkosPay, which frees its NIM.
  * Either one leaves NEEDS_REVIEW with a compare-and-swap, so a repeated or concurrent call can't settle twice.
+ * reviewedBy records who did it, in the same update: the admin's email, or "admin-token" for the static ADMIN_TOKEN.
  */
-export async function settleOrder(id: string, input: SettleInput) {
+export async function settleOrder(id: string, input: SettleInput, reviewedBy: string) {
   const { action, mode } = input
   if (action !== 'send' && action !== 'close') throw new HttpError(400, 'action must be "send" or "close"', 'INVALID_ACTION')
   if (action === 'send' && mode !== 'full' && mode !== 'pro-rata') throw new HttpError(400, 'mode must be "full" or "pro-rata"', 'INVALID_MODE')
@@ -540,7 +541,7 @@ export async function settleOrder(id: string, input: SettleInput) {
       credit: deposit.debit,
       externalRef: refundRef,
     }
-    if (!(await transition(order, 'RESOLVED', { reviewedAt, reviewNote: note }, refund))) throw notInReview()
+    if (!(await transition(order, 'RESOLVED', { reviewedAt, reviewedBy, reviewNote: note }, refund))) throw notInReview()
   } else {
     if (!canSendFromTreasury) throw new HttpError(503, "This server can't send from the treasury (no private key)", 'TREASURY_READ_ONLY')
     let luna = order.nimLuna
@@ -558,7 +559,7 @@ export async function settleOrder(id: string, input: SettleInput) {
     const sending = await transition(
       order,
       'SENDING',
-      { nimLuna: luna, reviewedAt, reviewNote: note ? `${summary}. ${note}` : summary },
+      { nimLuna: luna, reviewedAt, reviewedBy, reviewNote: note ? `${summary}. ${note}` : summary },
       undefined,
       { payoutTxHash: null },
     )
@@ -614,6 +615,7 @@ export function adminOrderDto(order: OrderWithLedger) {
     /** What "send" with mode "pro-rata" would pay; null when that isn't possible (e.g. paid in another currency). */
     proRataNimAmount: share === null ? null : formatNim(share),
     reviewedAt: order.reviewedAt?.toISOString() ?? null,
+    reviewedBy: order.reviewedBy,
     reviewNote: order.reviewNote,
     ledger: order.ledger.map((l) => ({
       kind: l.kind,
