@@ -78,8 +78,10 @@ type Db = PrismaClient | Prisma.TransactionClient
  * Paid buys held for review stay reserved until an operator settles them (settleOrder), since the buyer may still be owed the NIM.
  */
 async function owedLuna(db: Db, now = new Date()): Promise<bigint> {
+  // Gifts sit in their own escrow; only older ones, paid into the treasury before it existed, are owed from here.
+  const giftsInTreasury: Prisma.GiftCardWhereInput[] = [{ escrowAddress: null }, ...(treasuryAddress ? [{ escrowAddress: treasuryAddress }] : [])]
   const [gifts, revivals, cashouts, buys] = await Promise.all([
-    db.giftCard.aggregate({ _sum: { receivedLuna: true }, where: { status: { in: ['ACTIVE', 'CLAIMING', 'REFUNDING'] } } }),
+    db.giftCard.aggregate({ _sum: { receivedLuna: true }, where: { status: { in: ['ACTIVE', 'CLAIMING', 'REFUNDING'] }, OR: giftsInTreasury } }),
     db.petRevival.aggregate({ _sum: { receivedLuna: true }, where: { status: 'REFUNDING' } }),
     db.offrampOrder.aggregate({ _sum: { receivedLuna: true }, where: { status: { in: ['PAYING_OUT', 'PAYOUT_FAILED', 'REFUNDING'] } } }),
     db.onrampOrder.aggregate({
@@ -98,8 +100,11 @@ export async function availableLuna(db: Db = prisma, balance?: bigint): Promise<
   return free > 0n ? free : 0n
 }
 
+/** Testnet NIM is worth nothing, so it is never sold for money. */
+const salesNetworkAllowed = () => config.nimiq.network === 'mainnet'
+
 export function onrampEnabled() {
-  return Boolean(treasuryAddress && canSendFromTreasury && bachsConfigured())
+  return salesNetworkAllowed() && Boolean(treasuryAddress && canSendFromTreasury && bachsConfigured())
 }
 
 export async function quote(currencyCode: unknown, amountRaw: unknown) {
@@ -153,6 +158,7 @@ export function quoteDto(q: Awaited<ReturnType<typeof quote>>) {
 }
 
 function requireOnramp() {
+  if (!salesNetworkAllowed()) throw new HttpError(503, 'Buying NIM only works on mainnet. Testnet NIM has no value.', 'ONRAMP_MAINNET_ONLY')
   if (!onrampEnabled()) throw new HttpError(503, "Buying NIM isn't available on this server yet", 'ONRAMP_NOT_CONFIGURED')
 }
 
@@ -347,6 +353,10 @@ async function reconcile(order: OnrampOrder) {
 
 async function startPayout(order: OnrampOrder) {
   if (!canSendFromTreasury) return
+  if (!salesNetworkAllowed()) {
+    await transition(order, 'NEEDS_REVIEW', { failureReason: 'Buying NIM only works on mainnet, so no NIM was sent. Refund this payment.' })
+    return
+  }
   // Stock was reserved at order time; this only trips if the treasury was emptied by hand meanwhile.
   const balance = await getBalanceLuna(treasuryAddress!)
   if (balance < order.nimLuna) {
@@ -359,6 +369,7 @@ async function startPayout(order: OnrampOrder) {
 
 /** Signs and persists before broadcasting, with a compare-and-swap on the previous hash (never two payouts). */
 async function sendPayout(order: OnrampOrder) {
+  if (!salesNetworkAllowed()) throw new Error('Buying NIM only pays out on mainnet')
   const target = await resolvePayoutAddress(order.payoutAddress)
   const { hash, hex } = await buildTreasuryTransaction(target, order.nimLuna, `KhalkosPay buy ${order.reference}`)
   const saved = await prisma.onrampOrder.updateMany({
@@ -547,6 +558,7 @@ export async function settleOrder(id: string, input: SettleInput, reviewedBy: st
     if (!(await transition(order, 'RESOLVED', { reviewedAt, reviewedBy, reviewNote: note }, refund))) throw notInReview()
   } else {
     if (!canSendFromTreasury) throw new HttpError(503, "This server can't send from the treasury (no private key)", 'TREASURY_READ_ONLY')
+    if (!salesNetworkAllowed()) throw new HttpError(409, 'This server runs on testnet, where purchases are never paid in NIM. Close it as refunded instead.', 'ONRAMP_MAINNET_ONLY')
     let luna = order.nimLuna
     let summary = `Sent the full ${formatNim(luna)} NIM`
     if (mode === 'pro-rata') {

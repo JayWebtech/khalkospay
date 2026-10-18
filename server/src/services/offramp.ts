@@ -102,7 +102,15 @@ export function quoteDto(q: Quote) {
   }
 }
 
+/** Testnet NIM is worth nothing, so it is never cashed out for naira. */
+export const cashoutNetworkAllowed = () => config.nimiq.network === 'mainnet'
+
+export function offrampEnabled() {
+  return cashoutNetworkAllowed() && Boolean(treasuryAddress && config.paystackSecretKey)
+}
+
 function requireTreasury(): string {
+  if (!cashoutNetworkAllowed()) throw new HttpError(503, 'Cash-out only works on mainnet. Testnet NIM has no value.', 'OFFRAMP_MAINNET_ONLY')
   if (!treasuryAddress) {
     throw new HttpError(503, 'Off-ramp deposit address is not configured on this server', 'OFFRAMP_NOT_CONFIGURED')
   }
@@ -325,6 +333,12 @@ async function confirmDeposit(order: OfframpOrder) {
 }
 
 async function advancePayout(order: OfframpOrder) {
+  // No naira for testnet NIM, even for an order made before this server ran on testnet: the NIM goes back instead.
+  if (!cashoutNetworkAllowed() && !order.paystackTransferCode) {
+    const failed = await transition(order, 'PAYOUT_FAILED', { failureReason: 'Cash-out only works on mainnet, so your NIM is going back to you' })
+    if (failed) await startRefund(failed)
+    return
+  }
   if (order.paystackTransferCode && throttled(`payout:${order.id}`, 20_000)) return
   try {
     let result: TransferResult

@@ -178,6 +178,8 @@ export interface AdminTreasury {
   balanceNim: string | null
   availableForSaleNim: string | null
   error: string | null
+  /** Gift NIM, held apart from the treasury. */
+  giftEscrow: { address: string | null; balanceNim: string | null }
 }
 
 export interface AdminOnrampOrder extends OnrampOrder {

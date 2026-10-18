@@ -7,11 +7,13 @@ import { EmailError, emailConfigured, sendEmail } from './email'
 import { giftEmail } from './gift-email'
 import {
   broadcastTransaction,
-  buildTreasuryTransaction,
+  buildTransactionFrom,
   canSendFromTreasury,
   ChainTransaction,
   formatNim,
   getTransaction,
+  giftEscrowAddress,
+  listTransactions,
   normalizeAddress,
   NotPayableError,
   parseNimToLuna,
@@ -72,11 +74,12 @@ async function verifyRedeemCode(code: string, stored: string): Promise<boolean> 
 }
 
 function requireEscrow(): string {
-  if (!treasuryAddress || !canSendFromTreasury) {
-    throw new HttpError(503, 'Gift cards are not available on this server yet', 'GIFTS_NOT_CONFIGURED')
-  }
-  return treasuryAddress
+  if (!giftEscrowAddress) throw new HttpError(503, 'Gift cards are not available on this server yet', 'GIFTS_NOT_CONFIGURED')
+  return giftEscrowAddress
 }
+
+/** Where a gift's NIM sits. Gifts made before the gift escrow existed were paid into the treasury and are paid out from it. */
+const escrowOf = (card: GiftCard) => card.escrowAddress ?? treasuryAddress
 
 function optionalString(value: unknown, field: string, max: number): string | null {
   if (value === undefined || value === null || value === '') return null
@@ -100,7 +103,7 @@ export async function createCard(input: {
   anonymous?: unknown
   senderName?: unknown
 }): Promise<{ card: GiftCard; senderKey: string }> {
-  requireEscrow()
+  const escrowAddress = requireEscrow()
   let senderAddress: string
   try {
     senderAddress = normalizeAddress(String(input.senderAddress ?? ''))
@@ -135,6 +138,7 @@ export async function createCard(input: {
 
   const data = {
     reference: `${GIFT_REFERENCE_PREFIX}${randomBytes(8).toString('hex')}`,
+    escrowAddress,
     amountLuna,
     message: optionalString(input.message, 'message', MAX_MESSAGE_LENGTH) ?? '',
     redeemCodeHash: await hashRedeemCode(code),
@@ -230,11 +234,11 @@ async function attachFunding(card: GiftCard, hash: string): Promise<GiftCard> {
   return prisma.giftCard.findUniqueOrThrow({ where: { id: card.id } })
 }
 
-/** Treasury scan hook: attaches a confirmed-or-pending payment whose memo names a gift nobody reported. */
+/** Escrow and treasury scan hook: attaches a confirmed-or-pending payment whose memo names a gift nobody reported. */
 export async function attachScannedFunding(tx: ChainTransaction) {
   if (!tx.success) return
   const card = await prisma.giftCard.findUnique({ where: { reference: tx.data.trim() } })
-  if (!card || card.fundingTxHash || !FUNDING_ATTACHABLE.includes(card.status)) return
+  if (!card || tx.to !== escrowOf(card) || card.fundingTxHash || !FUNDING_ATTACHABLE.includes(card.status)) return
   if (await prisma.giftCard.findUnique({ where: { fundingTxHash: tx.hash } })) return
   await attachFunding(card, tx.hash).catch((e) => console.error(`[gifts] auto-attach ${card.id} failed:`, e.message))
 }
@@ -321,7 +325,9 @@ export async function claimCard(id: string, input: { redeemCode: unknown; claime
   } catch {
     throw new HttpError(400, 'Connect your Nimiq wallet to receive this gift', 'INVALID_ADDRESS')
   }
-  if (claimerAddress === treasuryAddress) throw new HttpError(400, 'Choose your own wallet to receive this gift', 'INVALID_ADDRESS')
+  if (claimerAddress === treasuryAddress || claimerAddress === giftEscrowAddress || claimerAddress === escrowOf(card)) {
+    throw new HttpError(400, 'Choose your own wallet to receive this gift', 'INVALID_ADDRESS')
+  }
   const code = normalizeCode(input.redeemCode)
   if (!code || !(await verifyRedeemCode(code, card.redeemCodeHash))) {
     throw new HttpError(403, "That code doesn't match this gift", 'WRONG_CODE')
@@ -406,7 +412,8 @@ async function confirmFunding(card: GiftCard) {
     if (waited > config.gifts.fundingLookupTimeoutSeconds * 1000) await reject('Your NIM transaction was not found on the Nimiq network')
     return
   }
-  if (tx.to !== treasuryAddress) return void (await reject('That transaction was not sent to the KhalkosPay deposit address'))
+  const escrow = escrowOf(card)
+  if (tx.to !== escrow) return void (await reject('That transaction was not sent to the KhalkosPay gift address'))
   if (!tx.success) return void (await reject('That transaction failed on the Nimiq network'))
   if (tx.data.trim() !== card.reference) return void (await reject('That transaction belongs to a different gift'))
   if (tx.confirmations < config.nimiq.minConfirmations) return
@@ -421,7 +428,7 @@ async function confirmFunding(card: GiftCard) {
       receivedLuna: tx.valueLuna,
       failureReason: short ? `Received ${formatNim(tx.valueLuna)} NIM but this gift needs ${formatNim(card.amountLuna)} NIM` : null,
     },
-    { kind: 'DEPOSIT', asset: 'NIM', amount: tx.valueLuna, debit: `nim:${tx.from}`, credit: `nim:${treasuryAddress}`, externalRef: tx.hash },
+    { kind: 'DEPOSIT', asset: 'NIM', amount: tx.valueLuna, debit: `nim:${tx.from}`, credit: `nim:${escrow}`, externalRef: tx.hash },
     { fundingTxHash: hash },
   )
   if (updated?.status === 'REFUNDING') await advancePayout(updated, 'refund')
@@ -487,10 +494,11 @@ const LEG = {
 async function sendPayout(card: GiftCard, leg: PayoutLeg) {
   const l = LEG[leg]
   const recipient = l.recipient(card)
-  if (!recipient || !card.receivedLuna) throw new Error(`card ${card.id} has nothing to ${leg}`)
+  const escrow = escrowOf(card)
+  if (!recipient || !card.receivedLuna || !escrow) throw new Error(`card ${card.id} has nothing to ${leg}`)
   // Re-resolved on every attempt, so a card that got stuck paying a contract heals on its next retry.
   const target = await resolvePayoutAddress(recipient)
-  const { hash, hex } = await buildTreasuryTransaction(target, card.receivedLuna, l.memo(card))
+  const { hash, hex } = await buildTransactionFrom(escrow, target, card.receivedLuna, l.memo(card))
   const previous = l.sent(card).hash
   const saved = await prisma.giftCard.updateMany({
     where: { id: card.id, status: l.from, ...(leg === 'claim' ? { claimTxHash: previous } : { refundTxHash: previous }) },
@@ -515,7 +523,7 @@ async function advancePayout(card: GiftCard, leg: PayoutLeg) {
         kind: l.kind,
         asset: 'NIM',
         amount: card.receivedLuna!,
-        debit: `nim:${treasuryAddress}`,
+        debit: `nim:${escrowOf(card)}`,
         // Whoever the confirmed transaction actually paid (a contract's owner, not the contract).
         credit: `nim:${tx.to}`,
         externalRef: tx.hash,
@@ -536,18 +544,29 @@ async function advancePayout(card: GiftCard, leg: PayoutLeg) {
   }
 }
 
+/** Safety net for gift payments the app never reported, like the treasury scan but on the gift escrow. */
+async function scanEscrowDeposits() {
+  if (!giftEscrowAddress || throttled('scan:escrow', 15_000)) return
+  const incoming = (await listTransactions(giftEscrowAddress)).filter(
+    (tx) => tx.to === giftEscrowAddress && tx.data.trim().startsWith(GIFT_REFERENCE_PREFIX),
+  )
+  for (const tx of incoming) await attachScannedFunding(tx)
+}
+
 export function startGiftCardWorker(intervalMs = 5_000) {
   let running = false
   const tick = async () => {
     if (running) return
     running = true
     try {
+      await scanEscrowDeposits().catch((e) => console.error('[gifts] escrow scan failed:', e.message))
       await prisma.giftCard.updateMany({
         where: { status: 'AWAITING_FUNDING', fundingTxHash: null, expiresAt: { lt: new Date() } },
         data: { status: 'EXPIRED' },
       })
       const work: Prisma.GiftCardWhereInput[] = [{ status: 'AWAITING_FUNDING', fundingTxHash: { not: null } }]
-      if (canSendFromTreasury) work.push({ status: { in: ['CLAIMING', 'REFUNDING'] } })
+      // Older gifts pay out from the treasury, new ones from the gift escrow; sendPayout refuses one this server can't sign for.
+      if (giftEscrowAddress || canSendFromTreasury) work.push({ status: { in: ['CLAIMING', 'REFUNDING'] } })
       if (emailConfigured()) {
         work.push({ status: 'ACTIVE', recipientEmail: { not: null }, emailSentAt: null, emailAttempts: { lt: MAX_EMAIL_ATTEMPTS } })
       }
@@ -571,7 +590,7 @@ export function startGiftCardWorker(intervalMs = 5_000) {
 
 export function giftConfigDto() {
   return {
-    enabled: Boolean(treasuryAddress && canSendFromTreasury),
+    enabled: giftEscrowAddress !== null,
     network: config.nimiq.network,
     minCodeLength: MIN_CODE_LENGTH,
     fundingTtlSeconds: config.gifts.fundingTtlSeconds,
@@ -581,6 +600,7 @@ export function giftConfigDto() {
 /** Public view of a card: anyone holding the link sees this, so it never includes the code hash or email. */
 export function cardDto(card: GiftCard) {
   const funded = card.receivedLuna !== null && (FUNDED.includes(card.status) || card.reclaimedAt !== null)
+  const escrow = escrowOf(card)
   return {
     id: card.id,
     shareCode: card.shareCode ? formatShareCode(card.shareCode) : null,
@@ -601,8 +621,8 @@ export function cardDto(card: GiftCard) {
     network: config.nimiq.network,
     confirming: card.status === 'AWAITING_FUNDING' && card.fundingTxHash !== null,
     funding:
-      card.status === 'AWAITING_FUNDING' && !card.fundingTxHash && treasuryAddress
-        ? { recipient: treasuryAddress, valueLuna: Number(card.amountLuna), data: card.reference }
+      card.status === 'AWAITING_FUNDING' && !card.fundingTxHash && escrow
+        ? { recipient: escrow, valueLuna: Number(card.amountLuna), data: card.reference }
         : null,
     // The funding tx names the sender on-chain, so anonymous gifts keep it private.
     fundingTxHash: card.anonymous ? null : card.fundingTxHash,

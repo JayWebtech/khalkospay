@@ -14,7 +14,7 @@ import {
 import { config } from '../config'
 import { HttpError } from '../lib/http-error'
 import { prisma } from '../lib/prisma'
-import { formatNim, getBalanceLuna, treasuryAddress } from './nimiq'
+import { formatNim, getBalanceLuna, giftEscrowAddress, treasuryAddress } from './nimiq'
 import { availableLuna, ONRAMP_CURRENCIES } from './onramp'
 import { XP_PER_LEVEL } from './pet-species'
 
@@ -72,17 +72,28 @@ const countsBy = <K extends string>(rows: CountRow<K>[], keys: readonly K[]) =>
 
 const sum = (rows: CountRow<string>[]) => rows.reduce((n, r) => n + r._count._all, 0)
 
+const balanceWithTimeout = (address: string) =>
+  Promise.race([
+    getBalanceLuna(address),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Nimiq RPC timed out')), BALANCE_TIMEOUT_MS)),
+  ])
+
+/** The gift escrow holds gift NIM apart from the treasury; null balance when it isn't set up or can't be read. */
+async function giftEscrowSnapshot() {
+  if (!giftEscrowAddress) return { address: null, balanceNim: null }
+  const balance = await balanceWithTimeout(giftEscrowAddress).catch(() => null)
+  return { address: giftEscrowAddress, balanceNim: balance === null ? null : formatNim(balance) }
+}
+
 /** Separate from overview(), so a slow Nimiq RPC never holds up the rest of the dashboard. */
 export async function treasurySnapshot() {
-  if (!treasuryAddress) return { address: null, balanceNim: null, availableForSaleNim: null, error: 'Treasury not configured' }
+  const giftEscrow = await giftEscrowSnapshot()
+  if (!treasuryAddress) return { address: null, balanceNim: null, availableForSaleNim: null, error: 'Treasury not configured', giftEscrow }
   try {
-    const balance = await Promise.race([
-      getBalanceLuna(treasuryAddress),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Nimiq RPC timed out')), BALANCE_TIMEOUT_MS)),
-    ])
-    return { address: treasuryAddress, balanceNim: formatNim(balance), availableForSaleNim: formatNim(await availableLuna(prisma, balance)), error: null }
+    const balance = await balanceWithTimeout(treasuryAddress)
+    return { address: treasuryAddress, balanceNim: formatNim(balance), availableForSaleNim: formatNim(await availableLuna(prisma, balance)), error: null, giftEscrow }
   } catch (e) {
-    return { address: treasuryAddress, balanceNim: null, availableForSaleNim: null, error: e instanceof Error ? e.message : 'Balance unavailable' }
+    return { address: treasuryAddress, balanceNim: null, availableForSaleNim: null, error: e instanceof Error ? e.message : 'Balance unavailable', giftEscrow }
   }
 }
 

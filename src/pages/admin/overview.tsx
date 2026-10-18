@@ -173,13 +173,9 @@ const plural = (n: number, one: string, many: string) => `${n.toLocaleString()} 
 function TreasuryStat() {
   const { data, loading } = useAdminQuery<AdminTreasury>('/api/admin/treasury')
   if (!data) return <Stat label="Treasury" value={loading ? '…' : '—'} note={loading ? 'Checking the balance' : 'Unavailable'} />
-  return (
-    <Stat
-      label="Treasury"
-      value={data.balanceNim === null ? '—' : formatNim(data.balanceNim)}
-      note={data.availableForSaleNim === null ? (data.error ?? 'Unavailable') : `${formatNim(data.availableForSaleNim)} free to sell`}
-    />
-  )
+  const sale = data.availableForSaleNim === null ? (data.error ?? 'Unavailable') : `${formatNim(data.availableForSaleNim)} free to sell`
+  const gifts = !data.giftEscrow.address ? 'gift escrow not set up' : data.giftEscrow.balanceNim === null ? 'gift escrow unavailable' : `${formatNim(data.giftEscrow.balanceNim)} in gift escrow`
+  return <Stat label="Treasury" value={data.balanceNim === null ? '—' : formatNim(data.balanceNim)} note={`${sale} · ${gifts}`} />
 }
 
 const prefixed = (prefix: string, counts: Record<string, number>) =>

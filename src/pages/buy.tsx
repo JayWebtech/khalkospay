@@ -33,12 +33,14 @@ export function BuyPage() {
     if (config && !currency) setCurrency(defaultBuyCurrency(config.currencies.map((c) => c.code)))
   }, [config, currency])
 
-  const networkMismatch = Boolean(config && wallet.provider && config.network !== wallet.network)
+  // Testnet NIM has no value, so a testnet server never sells it; the alert below says so instead of asking for a switch.
+  const testnet = config?.network === 'testnet'
+  const networkMismatch = Boolean(config && !testnet && wallet.provider && config.network !== wallet.network)
   const amountError = quote?.belowMinimum
     ? `The minimum is ${formatFiat(quote.minAmount, currency)}`
     : quote?.aboveMaximum
       ? `The maximum per purchase is ${formatFiat(quote.maxAmount, currency)}`
-      : quote?.exceedsStock
+      : quote?.exceedsStock && config?.enabled
         ? `KhalkosPay can sell up to ${formatNim(quote.availableNim, 0)} right now (about ${formatFiat(quote.maxAmount, currency)})`
         : null
   const ready = Boolean(quote && !amountError) && wallet.status === 'connected' && Boolean(config?.enabled) && !networkMismatch && !busy
@@ -82,8 +84,10 @@ export function BuyPage() {
         {(configError || (config && !config.enabled)) && (
           <Alert variant="destructive">
             <CircleAlert />
-            <AlertTitle>Buying NIM is unavailable right now</AlertTitle>
-            <AlertDescription>{configError ?? "Payments aren't switched on for this server yet."}</AlertDescription>
+            <AlertTitle>{testnet ? 'Buying NIM needs mainnet' : 'Buying NIM is unavailable right now'}</AlertTitle>
+            <AlertDescription>
+              {configError ?? (testnet ? 'Testnet NIM has no value, so KhalkosPay only sells NIM on mainnet.' : "Payments aren't switched on for this server yet.")}
+            </AlertDescription>
           </Alert>
         )}
 

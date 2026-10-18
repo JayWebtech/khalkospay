@@ -47,7 +47,9 @@ export function OfframpPage() {
 
   const balanceNim = wallet.balanceLuna === null ? null : lunaToNim(wallet.balanceLuna)
   const overBalance = balanceNim !== null && Number(amount) > balanceNim
-  const networkMismatch = Boolean(config && wallet.provider && config.network !== wallet.network)
+  // Testnet NIM has no value, so a testnet server never cashes it out; the alert below says so instead of asking for a switch.
+  const testnet = config?.network === 'testnet'
+  const networkMismatch = Boolean(config && !testnet && wallet.provider && config.network !== wallet.network)
 
   const amountError = overBalance
     ? `You have ${formatNim(balanceNim ?? 0)} available`
@@ -97,8 +99,13 @@ export function OfframpPage() {
         {(configError || (config && !config.enabled)) && (
           <Alert variant="destructive">
             <CircleAlert />
-            <AlertTitle>Cash-out is unavailable right now</AlertTitle>
-            <AlertDescription>{configError ?? "Bank payouts aren't switched on for this server yet. You can still check rates."}</AlertDescription>
+            <AlertTitle>{testnet ? 'Cash-out needs mainnet' : 'Cash-out is unavailable right now'}</AlertTitle>
+            <AlertDescription>
+              {configError ??
+                (testnet
+                  ? "Testnet NIM has no value, so it can't be cashed out for naira. You can still check rates."
+                  : "Bank payouts aren't switched on for this server yet. You can still check rates.")}
+            </AlertDescription>
           </Alert>
         )}
 

@@ -7,6 +7,7 @@ import {
   createOrder,
   getOrder,
   listOrders,
+  offrampEnabled,
   orderDto,
   parseAmount,
   quoteDto,
@@ -23,7 +24,7 @@ const strictLimit = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: 'd
 
 offrampRouter.get('/config', (_req, res) => {
   res.json({
-    enabled: Boolean(treasuryAddress && config.paystackSecretKey),
+    enabled: offrampEnabled(),
     network: config.nimiq.network,
     depositAddress: treasuryAddress,
     minPayoutNgn: config.offramp.minPayoutNgn,

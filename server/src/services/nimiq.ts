@@ -117,6 +117,18 @@ export const treasuryAddress: string | null = treasuryKeyPair
 
 export const canSendFromTreasury = treasuryKeyPair !== null
 
+const giftKeyPair = config.nimiq.giftPrivateKey ? KeyPair.derive(PrivateKey.fromHex(config.nimiq.giftPrivateKey)) : null
+
+/** Where new gifts are paid in and claimed from. Null means gifts are off. */
+export const giftEscrowAddress: string | null = giftKeyPair ? giftKeyPair.toAddress().toUserFriendlyAddress() : null
+
+/** Every address this server can sign payments from, by user-friendly address. */
+const signers = new Map(
+  [treasuryKeyPair, giftKeyPair].filter((k) => k !== null).map((k) => [k.toAddress().toUserFriendlyAddress(), k] as const),
+)
+
+export const canSendFrom = (address: string | null) => address !== null && signers.has(address)
+
 /**
  * Nimiq Pay may hand back either a tx hash or the serialized transaction,
  * so accept both and always derive the canonical hash.
@@ -192,15 +204,23 @@ export async function resolvePayoutAddress(address: string): Promise<string> {
 }
 
 /** Signs a payment from the treasury without broadcasting, so the hash can be persisted first. */
-export async function buildTreasuryTransaction(
+export async function buildTreasuryTransaction(recipient: string, valueLuna: bigint, data: string) {
+  if (!treasuryKeyPair) throw new Error('Treasury signing key is not configured')
+  return buildTransactionFrom(treasuryKeyPair.toAddress().toUserFriendlyAddress(), recipient, valueLuna, data)
+}
+
+/** Signs a payment from one of this server's own addresses (treasury or gift escrow) without broadcasting. */
+export async function buildTransactionFrom(
+  sender: string,
   recipient: string,
   valueLuna: bigint,
   data: string,
 ): Promise<{ hash: string; hex: string }> {
-  if (!treasuryKeyPair) throw new Error('Treasury signing key is not configured')
+  const keyPair = signers.get(sender)
+  if (!keyPair) throw new Error(`This server has no signing key for ${sender}`)
   const height = await rpc<number>('getBlockNumber', [])
   const tx = TransactionBuilder.newBasicWithData(
-    treasuryKeyPair.toAddress(),
+    keyPair.toAddress(),
     Address.fromUserFriendlyAddress(recipient),
     new TextEncoder().encode(data),
     valueLuna,
@@ -208,7 +228,7 @@ export async function buildTreasuryTransaction(
     height,
     config.nimiq.networkId,
   )
-  tx.sign(treasuryKeyPair, undefined)
+  tx.sign(keyPair, undefined)
   return { hash: tx.hash(), hex: tx.toHex() }
 }
 

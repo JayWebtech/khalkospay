@@ -171,6 +171,9 @@ model GiftCard {
   /// Short code recipients can type into the app to open the gift, e.g. K7QM3XPD (shown as K7QM-3XPD).
   shareCode          String?        @unique
   amountLuna         BigInt
+  /// Address holding this gift's NIM, the gift escrow (NIMIQ_GIFT_PRIVATE_KEY). Null on gifts made before gifts had
+  /// their own escrow: those sit in the treasury and are paid from it.
+  escrowAddress      String?
   message            String         @default("")
   redeemCodeHash     String
   /// SHA-256 of a random key handed to the creating device; lets that device take the gift back without signing.

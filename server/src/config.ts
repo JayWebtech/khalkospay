@@ -22,6 +22,8 @@ export const config = {
     rpcUrl: process.env.NIMIQ_RPC_URL || (network === 'mainnet' ? 'https://rpc.nimiqwatch.com' : ''),
     treasuryPrivateKey: process.env.NIMIQ_TREASURY_PRIVATE_KEY || '',
     treasuryAddress: process.env.NIMIQ_TREASURY_ADDRESS || '',
+    /** Gift escrow: holds gift NIM apart from the treasury, so gifts never count against NIM for sale. Gifts are off without it. */
+    giftPrivateKey: process.env.NIMIQ_GIFT_PRIVATE_KEY || '',
     minConfirmations: num('NIMIQ_MIN_CONFIRMATIONS', 10),
   },
   offramp: {

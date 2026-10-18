@@ -11,7 +11,7 @@ import { offrampRouter } from './routes/offramp'
 import { onrampRouter } from './routes/onramp'
 import { webhooksRouter } from './routes/webhooks'
 import { startGiftCardWorker } from './services/giftcards'
-import { canSendFromTreasury, checkRpcNetwork, treasuryAddress, WrongNetworkError } from './services/nimiq'
+import { canSendFromTreasury, checkRpcNetwork, giftEscrowAddress, treasuryAddress, WrongNetworkError } from './services/nimiq'
 import { startOfframpWorker } from './services/offramp'
 import { onrampEnabled, startOnrampWorker } from './services/onramp'
 import { startPetWorker } from './services/pets'
@@ -77,8 +77,13 @@ server.listen(config.port, () => {
     )
   }
   console.log(`  Deposit address: ${treasuryAddress ?? 'NOT CONFIGURED'}${canSendFromTreasury ? ' (refunds automatic)' : ' (refunds manual)'}`)
+  console.log(
+    `  Gift escrow: ${giftEscrowAddress ?? 'NOT CONFIGURED, so new gifts are off (set NIMIQ_GIFT_PRIVATE_KEY)'}` +
+      (giftEscrowAddress && giftEscrowAddress === treasuryAddress ? ' · same key as the treasury, so gifts count against NIM for sale' : ''),
+  )
+  if (config.nimiq.network !== 'mainnet') console.log('  Buy NIM and cash-out: OFF on testnet (testnet NIM has no value)')
   console.log(`  Paystack: ${config.paystackSecretKey ? 'configured' : 'NOT CONFIGURED'} · Deepgram: ${config.deepgramApiKey ? 'configured' : 'NOT CONFIGURED'}`)
-  console.log(`  Buy NIM (Bachs): ${onrampEnabled() ? `on via ${config.bachs.baseUrl}${config.bachs.webhookSecret ? '' : ' · BACHS_WEBHOOK_SECRET not set, so payments are found by polling only'}` : 'NOT CONFIGURED'}`)
+  console.log(`  Buy NIM (Bachs): ${onrampEnabled() ? `on via ${config.bachs.baseUrl}${config.bachs.webhookSecret ? '' : ' · BACHS_WEBHOOK_SECRET not set, so payments are found by polling only'}` : config.nimiq.network !== 'mainnet' ? 'OFF on testnet' : 'NOT CONFIGURED'}`)
   console.log(`  Admin API: dashboard sign-in on · token ${adminEnabled() ? 'on' : config.adminToken ? 'OFF · ADMIN_TOKEN must be at least 32 characters' : 'NOT CONFIGURED'}`)
   console.log(`  Gift emails: ${config.resend.apiKey && config.resend.from ? `via Resend from ${config.resend.from}` : 'NOT CONFIGURED'}${config.miniAppUrl ? '' : ' · MINIAPP_URL not set, so emails carry the gift code but no link'}`)
 })

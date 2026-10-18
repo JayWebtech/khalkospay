@@ -153,15 +153,22 @@ The backend needs at least `DATABASE_URL`, the Nimiq network and RPC URL, and a 
 npm --prefix server run treasury:new
 ```
 
+Gift cards hold their NIM in a separate gift escrow address, so gifts never count against the NIM for sale. Generate its key the same way and paste it in as `NIMIQ_GIFT_PRIVATE_KEY`:
+
+```bash
+npm --prefix server run treasury:new -- gift
+```
+
 Optional keys switch on more features:
 
 | Variable | Turns on |
 | --- | --- |
-| `PAYSTACK_SECRET_KEY` | Bank payouts |
+| `NIMIQ_GIFT_PRIVATE_KEY` | Gift cards |
+| `PAYSTACK_SECRET_KEY` | Bank payouts (mainnet only) |
 | `DEEPGRAM_API_KEY` | Voice cash-out |
 | `ANTHROPIC_API_KEY` | BiteBuddy meal scoring |
 | `RESEND_API_KEY`, `RESEND_FROM`, `MINIAPP_URL` | Gift emails |
-| `BACHS_SECRET_KEY`, `BACHS_WEBHOOK_SECRET` | Buying NIM (`sk_sandbox_` keys use the Bachs sandbox) |
+| `BACHS_SECRET_KEY`, `BACHS_WEBHOOK_SECRET` | Buying NIM, mainnet only (`sk_sandbox_` keys use the Bachs sandbox) |
 | `ADMIN_TOKEN` | Script access to the admin API (at least 32 characters, e.g. from `openssl rand -hex 32`) |
 
 ### 3. Set up the database
@@ -201,6 +208,8 @@ Then sign in at [http://localhost:5173/admin](http://localhost:5173/admin).
 - Set `VITE_API_URL` (frontend) to your backend URL. Set `VITE_MINIAPP_URL` / `MINIAPP_URL` to your public domain alone, for example `khalkospay.vercel.app` rather than a `nimpay.app/miniapps/open/...` link, so gift links open inside Nimiq Pay.
 - The admin dashboard is at `https://<your-frontend>/admin`. `vercel.json` sends every page path to the app, so `/admin` and gift links load when opened directly. To create a login on the production database, run the seed with `DATABASE_URL` pointing at it: `npm --prefix server run admin:seed -- --allow-remote`.
 - Set a fixed `AUTH_SECRET` on the backend so wallet sign-ins survive redeploys.
+- Set `NIMIQ_GIFT_PRIVATE_KEY` to a key of its own, not the treasury key, or new gifts stay off. Gifts made before the gift escrow existed stay in the treasury and are still paid from it.
+- Buying NIM and cash-out only run with `NIMIQ_NETWORK=mainnet`. On testnet both are off, because testnet NIM has no value. Gifts and BiteBuddy still work on testnet.
 - When you move to `NIMIQ_NETWORK=mainnet`, set `NIMIQ_RPC_URL` to a mainnet node, or remove it so the mainnet default (`https://rpc.nimiqwatch.com`) applies. If the node is on a different network, the server logs a WRONG NETWORK error at startup and stops all treasury reads, sales and payouts.
 - In the Paystack dashboard, set the webhook URL to `https://<your-backend>/api/webhooks/paystack` and turn off transfer OTP so payouts run automatically.
 - In the Bachs dashboard, add a webhook endpoint at `https://<your-backend>/api/webhooks/bachs` for `collection.succeeded`, `collection.underpaid`, `checkout.completed` and `checkout.expired`, and put its signing secret in `BACHS_WEBHOOK_SECRET`. Keep enough NIM in the treasury for purchases; `ONRAMP_RESERVE_NIM` holds some back.
