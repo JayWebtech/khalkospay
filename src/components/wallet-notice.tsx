@@ -3,10 +3,12 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { useWallet } from '@/lib/wallet'
+import { useWalletSession } from '@/lib/wallet-session'
 
 /** Explains what's missing before the user can pay, and offers the one action that fixes it. */
 export function WalletNotice({ purpose }: { purpose: string }) {
-  const { status, connect, error } = useWallet()
+  const { status, error } = useWallet()
+  const connect = useWalletSession((s) => s.connect)
 
   if (status === 'unavailable') {
     return (
@@ -24,7 +26,7 @@ export function WalletNotice({ purpose }: { purpose: string }) {
         <Wallet />
         <AlertTitle>Connect your wallet</AlertTitle>
         <AlertDescription className="flex flex-col items-start gap-3">
-          <span>KhalkosPay needs your Nimiq address for {purpose}. You'll confirm in Nimiq Pay.</span>
+          <span>KhalkosPay needs your Nimiq address for {purpose}. You'll sign a message in Nimiq Pay. It doesn't move any NIM.</span>
           {error && <span className="text-destructive">{error}</span>}
           <Button size="lg" onClick={() => void connect()} disabled={status === 'connecting'}>
             {status === 'connecting' ? <Spinner data-icon="inline-start" /> : <Wallet data-icon="inline-start" />}

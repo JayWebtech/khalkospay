@@ -5,8 +5,10 @@ type Provider = Awaited<ReturnType<typeof init>>
 
 export type WalletStatus = 'detecting' | 'unavailable' | 'disconnected' | 'connecting' | 'connected'
 
-const ADDRESS_KEY = 'khalkospay.address'
-const ACCOUNTS_KEY = 'khalkospay.accounts'
+/** The account Nimiq Pay signed with when the user connected, which is the one it pays from. */
+const SIGNER_KEY = 'khalkospay.signer'
+/** Before connecting meant signing, the app kept an account picked from a list; it may not be the one Nimiq Pay pays from. */
+const LEGACY_KEYS = ['khalkospay.address', 'khalkospay.accounts']
 
 function read(key: string) {
   try {
@@ -25,33 +27,8 @@ function write(key: string, value: string | null) {
   }
 }
 
-function readStoredAccounts(): string[] {
-  try {
-    const parsed = JSON.parse(read(ACCOUNTS_KEY) || '[]')
-    return Array.isArray(parsed) ? parsed.filter((a): a is string => typeof a === 'string') : []
-  } catch {
-    return []
-  }
-}
-
 export function sameAddress(a: string | null | undefined, b: string | null | undefined) {
   return Boolean(a && b && a.replace(/\s/g, '').toUpperCase() === b.replace(/\s/g, '').toUpperCase())
-}
-
-/** Every address in the lists, first sighting wins, without duplicates. */
-function mergeAccounts(...lists: string[][]) {
-  const merged: string[] = []
-  for (const a of lists.flat()) if (a && !merged.some((m) => sameAddress(m, a))) merged.push(a)
-  return merged
-}
-
-/** Clears the provider's cached account list, so the next listAccounts asks Nimiq Pay again instead of repeating it. */
-function forgetSharedAccounts(provider: Provider | null) {
-  try {
-    if (typeof provider?.disconnect === 'function') provider.disconnect()
-  } catch {
-    // Older hosts without a cache have nothing to clear.
-  }
 }
 
 export function errorMessage(e: unknown) {
@@ -88,17 +65,16 @@ let retryTimer: ReturnType<typeof setTimeout> | undefined
 interface WalletState {
   status: WalletStatus
   provider: Provider | null
+  /** The one account the app uses: the one Nimiq Pay signed with when the user connected, so the one it pays from. */
   address: string | null
-  /** Every account Nimiq Pay has shared on this device, newest share first. Kept until the user disconnects. */
-  accounts: string[]
   balanceLuna: number | null
   /** True while Nimiq Pay is still syncing, so a balance would be stale or missing. */
   syncing: boolean
   network: 'mainnet' | 'testnet'
   error: string | null
   detect: () => Promise<void>
-  connect: () => Promise<void>
-  chooseAccount: (address: string) => void
+  /** Takes the account a signature came from as the wallet's account. Connecting itself lives in wallet-session. */
+  setSigner: (address: string) => void
   refreshBalance: () => Promise<void>
   pay: (payment: { recipient: string; valueLuna: number; data: string }) => Promise<string>
   sign: (message: string) => Promise<{ publicKey: string; signature: string }>
@@ -109,66 +85,27 @@ export const useWallet = create<WalletState>((set, get) => ({
   status: 'detecting',
   provider: null,
   address: null,
-  accounts: [],
   balanceLuna: null,
   syncing: false,
   network: 'mainnet',
   error: null,
 
   detect: async () => {
+    for (const key of LEGACY_KEYS) write(key, null)
     try {
       const provider = await init({ timeout: 8_000 })
-      const address = read(ADDRESS_KEY)
-      set({
-        provider,
-        network: getHostNetwork() ?? 'mainnet',
-        address,
-        accounts: readStoredAccounts(),
-        status: address ? 'connected' : 'disconnected',
-      })
+      const address = read(SIGNER_KEY)
+      set({ provider, network: getHostNetwork() ?? 'mainnet', address, status: address ? 'connected' : 'disconnected' })
       if (address) void get().refreshBalance()
     } catch {
       set({ status: 'unavailable' })
     }
   },
 
-  // listAccounts asks the user to confirm, so this only ever runs from a tap.
-  connect: async () => {
-    const { provider } = get()
-    if (!provider) return
-    // Re-listing from a connected wallet (switching accounts) keeps the current one on screen meanwhile.
-    set({ status: get().status === 'connected' ? 'connected' : 'connecting', error: null })
-    // The provider repeats its first answer until cleared, which would never let the user share another account.
-    forgetSharedAccounts(provider)
-    try {
-      const shared = (await provider.listAccounts()).filter(Boolean)
-      if (shared.length === 0) throw new Error('No Nimiq account found in this wallet')
-      // Nimiq Pay shares only the accounts picked this time; keep the ones shared before, so one holding NIM never drops off.
-      const accounts = mergeAccounts(shared, get().accounts, readStoredAccounts())
-      const previous = get().address ?? read(ADDRESS_KEY)
-      let address = accounts.find((a) => sameAddress(a, previous)) ?? shared[0]
-      // With several accounts and no earlier choice, start on the first one that actually holds NIM.
-      if (accounts.length > 1 && !accounts.some((a) => sameAddress(a, previous))) {
-        const balances = await Promise.all(accounts.map((a) => balanceOf(provider, a)))
-        const funded = balances.findIndex((b) => b !== null && b > 0)
-        if (funded >= 0) address = accounts[funded]
-      }
-      write(ACCOUNTS_KEY, JSON.stringify(accounts))
-      write(ADDRESS_KEY, address)
-      set({ address, accounts, status: 'connected', network: getHostNetwork() ?? get().network, balanceLuna: null })
-      void get().refreshBalance()
-    } catch (e) {
-      set({ status: get().address ? 'connected' : 'disconnected', error: isUserRejection(e) ? null : errorMessage(e) })
-    }
-  },
-
-  chooseAccount: (address) => {
-    if (sameAddress(address, get().address)) return
-    // An account learned from a signature may not be in the last listAccounts result; remember it too.
-    const accounts = get().accounts.some((a) => sameAddress(a, address)) ? get().accounts : [...get().accounts, address]
-    write(ACCOUNTS_KEY, JSON.stringify(accounts))
-    write(ADDRESS_KEY, address)
-    set({ address, accounts, balanceLuna: null })
+  setSigner: (address) => {
+    const changed = !sameAddress(address, get().address)
+    write(SIGNER_KEY, address)
+    set({ address, status: 'connected', error: null, network: getHostNetwork() ?? get().network, ...(changed ? { balanceLuna: null } : {}) })
     void get().refreshBalance()
   },
 
@@ -210,10 +147,8 @@ export const useWallet = create<WalletState>((set, get) => ({
 
   disconnect: () => {
     clearTimeout(retryTimer)
-    forgetSharedAccounts(get().provider)
-    write(ADDRESS_KEY, null)
-    write(ACCOUNTS_KEY, null)
-    set({ address: null, accounts: [], balanceLuna: null, syncing: false, status: get().provider ? 'disconnected' : 'unavailable' })
+    write(SIGNER_KEY, null)
+    set({ address: null, balanceLuna: null, syncing: false, error: null, status: get().provider ? 'disconnected' : 'unavailable' })
   },
 }))
 

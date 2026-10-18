@@ -1,40 +1,18 @@
-import { Check, LogOut, RefreshCw } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { LogOut, RefreshCw } from 'lucide-react'
+import { CopyButton } from '@/components/copy-button'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { Spinner } from '@/components/ui/spinner'
-import { formatNim, lunaToNim, shortAddress } from '@/lib/format'
-import { cn } from '@/lib/utils'
-import { balanceOf, sameAddress, useWallet } from '@/lib/wallet'
+import { formatNim, lunaToNim } from '@/lib/format'
+import { useWallet } from '@/lib/wallet'
+import { useWalletSession } from '@/lib/wallet-session'
 
-/** Shows which account and network the balance comes from, and lets the user switch between the accounts Nimiq Pay shared. */
+/** Shows the one account KhalkosPay uses, the one Nimiq Pay pays from, and how to change it. */
 export function AccountSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { provider, address, accounts, network, connect, chooseAccount, disconnect, error } = useWallet()
-  const list = accounts.length > 0 ? accounts : address ? [address] : []
-  const listKey = list.join('|')
-  const [balances, setBalances] = useState<Record<string, number | null | undefined>>({})
-  const [refreshing, setRefreshing] = useState(false)
-
-  useEffect(() => {
-    if (!open) return
-    let alive = true
-    setBalances({})
-    for (const a of listKey.split('|').filter(Boolean)) {
-      void balanceOf(provider, a).then((b) => alive && setBalances((s) => ({ ...s, [a]: b })))
-    }
-    return () => {
-      alive = false
-    }
-  }, [open, provider, listKey])
-
-  async function refresh() {
-    setRefreshing(true)
-    try {
-      await connect()
-    } finally {
-      setRefreshing(false)
-    }
-  }
+  const { address, network, balanceLuna, syncing, error } = useWallet()
+  const connect = useWalletSession((s) => s.connect)
+  const disconnect = useWalletSession((s) => s.disconnect)
+  const signingIn = useWalletSession((s) => s.signingIn)
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
@@ -42,47 +20,28 @@ export function AccountSheet({ open, onOpenChange }: { open: boolean; onOpenChan
         <DrawerHeader>
           <DrawerTitle className="text-lg font-semibold">Your wallet</DrawerTitle>
           <DrawerDescription>
-            Nimiq Pay is on <span className="font-medium text-foreground">{network}</span>. Balances below are read from that network.
+            KhalkosPay uses the account Nimiq Pay pays from, on <span className="font-medium text-foreground">{network}</span>.
           </DrawerDescription>
         </DrawerHeader>
-        <div className="flex flex-col gap-2 px-4 py-2">
-          <div role="radiogroup" aria-label="Accounts" className="flex flex-col gap-2">
-            {list.map((a) => {
-              const selected = sameAddress(a, address)
-              const luna = balances[a]
-              return (
-                <button
-                  key={a}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => {
-                    chooseAccount(a)
-                    onOpenChange(false)
-                  }}
-                  className={cn(
-                    'flex min-h-14 items-center gap-3 rounded-2xl bg-muted/50 px-4 py-2 text-left ring-1 ring-transparent transition-[scale] motion-safe:active:scale-[0.98]',
-                    selected && 'bg-accent ring-primary/50',
-                  )}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-mono text-sm">{shortAddress(a)}</span>
-                    <span className="block text-sm text-muted-foreground tabular-nums">
-                      {luna === undefined ? 'Checking balance…' : luna === null ? "Balance isn't available yet" : formatNim(lunaToNim(luna), 5)}
-                    </span>
-                  </span>
-                  {selected && <Check className="size-5 shrink-0 text-primary" aria-hidden="true" />}
-                </button>
-              )
-            })}
-          </div>
-          <p className="text-sm text-muted-foreground">Don't see the account with your NIM? Refresh the list and pick it in Nimiq Pay.</p>
+        <div className="flex flex-col gap-3 px-4 py-2">
+          {address && (
+            <div className="flex items-center gap-2 rounded-2xl bg-muted/50 py-2 pr-2 pl-4">
+              <span className="min-w-0 flex-1">
+                <span className="block font-mono text-sm break-all">{address}</span>
+                <span className="block text-sm text-muted-foreground tabular-nums">
+                  {balanceLuna !== null ? formatNim(lunaToNim(balanceLuna), 5) :syncing ? 'Nimiq Pay is still syncing' : 'Checking balance…'}
+                </span>
+              </span>
+              <CopyButton value={address} label="Copy address" />
+            </div>
+          )}
+          <p className="text-sm text-muted-foreground">To use another account, switch to it in Nimiq Pay, then tap Reconnect and sign.</p>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DrawerFooter className="pb-[max(env(safe-area-inset-bottom),1rem)]">
-          <Button size="xl" variant="default" onClick={() => void refresh()} disabled={refreshing}>
-            {refreshing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
-            Refresh accounts from Nimiq Pay
+          <Button size="xl" variant="default" onClick={() => void connect()} disabled={signingIn}>
+            {signingIn ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
+            Reconnect
           </Button>
           <Button
             size="xl"

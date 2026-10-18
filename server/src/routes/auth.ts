@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { rateLimit } from 'express-rate-limit'
-import { createChallenge, verifyChallenge } from '../services/wallet-auth'
+import { addressOfPublicKey, createChallenge, verifyChallenge } from '../services/wallet-auth'
 
 export const authRouter = Router()
 
@@ -13,4 +13,9 @@ authRouter.post('/challenge', limit, (req, res) => {
 authRouter.post('/verify', limit, (req, res) => {
   const { challengeId, publicKey, signature } = req.body ?? {}
   res.json(verifyChallenge({ challengeId, publicKey, signature }))
+})
+
+/** Which account a signature came from, without signing in: the fallback when /verify can't check the signature. */
+authRouter.post('/address', limit, (req, res) => {
+  res.json({ address: addressOfPublicKey(req.body?.publicKey) })
 })

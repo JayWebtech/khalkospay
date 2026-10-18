@@ -140,7 +140,7 @@ function OtherDevicesCard() {
         Sent gifts from another phone?
       </h2>
       <p className="text-sm text-muted-foreground">
-        Sign a message in Nimiq Pay to find them. It proves the wallet is yours and doesn't move any NIM or change your account here.
+        Sign a message in Nimiq Pay to find them. It proves the wallet is yours and doesn't move any NIM.
       </p>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <Button size="lg" variant="outline" onClick={() => void go()} disabled={signingIn}>

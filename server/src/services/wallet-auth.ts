@@ -63,6 +63,18 @@ function prefixedHash(message: Uint8Array): Uint8Array {
     .digest()
 }
 
+/**
+ * The address a public key controls. It proves nothing on its own: the app uses it to name the account Nimiq Pay
+ * signed with when a signature's format can't be checked here, never to sign anyone in.
+ */
+export function addressOfPublicKey(publicKeyHex: unknown): string {
+  try {
+    return PublicKey.fromHex(String(publicKeyHex ?? '').replace(/^0x/, '')).toAddress().toUserFriendlyAddress()
+  } catch {
+    throw new HttpError(400, 'That is not a Nimiq public key', 'INVALID_PUBLIC_KEY')
+  }
+}
+
 /** Checks the Nimiq signed-message scheme first, then a raw signature over the message bytes. */
 export function verifySignedMessage(message: string, publicKeyHex: string, signatureHex: string): string | null {
   try {

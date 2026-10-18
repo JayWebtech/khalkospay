@@ -13,9 +13,11 @@ import { formatNgn, lunaToNim, shortAddress } from '@/lib/format'
 import { useOrders, useRate } from '@/lib/offramp'
 import { cn } from '@/lib/utils'
 import { useWallet } from '@/lib/wallet'
+import { useWalletSession } from '@/lib/wallet-session'
 
-function BalanceBlock({ onSwitchAccount }: { onSwitchAccount: () => void }) {
-  const { status, balanceLuna, syncing, address, network, accounts, connect } = useWallet()
+function BalanceBlock({ onOpenWallet }: { onOpenWallet: () => void }) {
+  const { status, balanceLuna, syncing, address, network } = useWallet()
+  const connect = useWalletSession((s) => s.connect)
   const rate = useRate()
 
   if (status === 'detecting') {
@@ -58,8 +60,8 @@ function BalanceBlock({ onSwitchAccount }: { onSwitchAccount: () => void }) {
       {nim === 0 && address && (
         <p className="mt-2 text-sm text-hero-muted">
           No NIM in {shortAddress(address)} on {network}.{' '}
-          <button type="button" onClick={onSwitchAccount} className="-my-2 py-2 font-medium text-hero-foreground underline underline-offset-4">
-            {accounts.length > 1 ? 'Switch account' : 'Check account'}
+          <button type="button" onClick={onOpenWallet} className="-my-2 py-2 font-medium text-hero-foreground underline underline-offset-4">
+            Use another account
           </button>
         </p>
       )}
@@ -70,7 +72,7 @@ function BalanceBlock({ onSwitchAccount }: { onSwitchAccount: () => void }) {
 export function HomePage() {
   const { address, network, refreshBalance } = useWallet()
   const orders = useOrders(address)
-  const [accountsOpen, setAccountsOpen] = useState(false)
+  const [walletOpen, setWalletOpen] = useState(false)
 
   useEffect(() => {
     void refreshBalance()
@@ -86,8 +88,8 @@ export function HomePage() {
         {address && (
           <button
             type="button"
-            onClick={() => setAccountsOpen(true)}
-            aria-label={`Wallet ${shortAddress(address)} on ${network}. Switch account`}
+            onClick={() => setWalletOpen(true)}
+            aria-label={`Wallet ${shortAddress(address)} on ${network}. Wallet options`}
             className="-mr-1 flex h-11 items-center rounded-full px-1 text-[0.6875rem] motion-safe:active:scale-[0.96]"
           >
             <span className="flex h-7 items-center gap-1.5 rounded-full border border-border px-2.5">
@@ -99,7 +101,7 @@ export function HomePage() {
           </button>
         )}
       </header>
-      <AccountSheet open={accountsOpen} onOpenChange={setAccountsOpen} />
+      <AccountSheet open={walletOpen} onOpenChange={setWalletOpen} />
 
       <section className="px-4" aria-label="Wallet">
         <div className="relative isolate overflow-hidden rounded-3xl bg-hero p-5 text-hero-foreground shadow-[0_16px_40px_-20px_oklch(0.23_0.02_50/0.7)]">
@@ -108,7 +110,7 @@ export function HomePage() {
             className="pointer-events-none absolute -top-28 -right-20 -z-10 size-72 rounded-full bg-[radial-gradient(closest-side,var(--color-hero-accent),transparent)] opacity-30"
           />
           <p className="text-sm text-hero-muted">Wallet balance</p>
-          <BalanceBlock onSwitchAccount={() => setAccountsOpen(true)} />
+          <BalanceBlock onOpenWallet={() => setWalletOpen(true)} />
           <div className="mt-5 grid grid-cols-2 gap-2">
             <ButtonLink to="/buy" size="xl">
               <ArrowDownLeft data-icon="inline-start" />
