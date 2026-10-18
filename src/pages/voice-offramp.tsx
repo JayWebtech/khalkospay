@@ -51,7 +51,15 @@ export function VoiceOfframpPage() {
           <Alert variant="destructive">
             <CircleAlert />
             <AlertTitle>The call couldn't continue</AlertTitle>
-            <AlertDescription>{call.error}</AlertDescription>
+            <AlertDescription>
+              <p>
+                {call.error}{' '}
+                <Link to="/cash-out" className="font-medium text-foreground underline underline-offset-4">
+                  Use the cash-out form instead.
+                </Link>
+              </p>
+              {call.errorDetail && <p className="font-mono text-xs break-all">Error: {call.errorDetail}</p>}
+            </AlertDescription>
           </Alert>
         )}
 

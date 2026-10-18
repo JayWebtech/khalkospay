@@ -5,6 +5,7 @@ import { VoiceCall, type AgentActivity, type CallPhase, type TranscriptLine } fr
 export function useVoiceCall(userAddress: string | null) {
   const [phase, setPhase] = useState<CallPhase>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [errorDetail, setErrorDetail] = useState<string | null>(null)
   const [activity, setActivity] = useState<AgentActivity>('listening')
   const [lines, setLines] = useState<TranscriptLine[]>([])
   const [walletRequest, setWalletRequest] = useState<Order | null>(null)
@@ -17,6 +18,7 @@ export function useVoiceCall(userAddress: string | null) {
   const start = useCallback(() => {
     callRef.current?.hangUp()
     setError(null)
+    setErrorDetail(null)
     setLines([])
     setWalletRequest(null)
     setOrder(null)
@@ -27,10 +29,13 @@ export function useVoiceCall(userAddress: string | null) {
 
     const call = new VoiceCall(
       {
-        phase: (next, message) => {
+        phase: (next, message, detail) => {
           setPhase(next)
           if (next === 'live') setStartedAt((t) => t ?? Date.now())
-          if (next === 'error') setError(message ?? 'The call dropped.')
+          if (next === 'error') {
+            setError(message ?? 'The call dropped.')
+            setErrorDetail(detail ?? null)
+          }
         },
         activity: setActivity,
         transcript: (line) => setLines((prev) => [...prev, line].slice(-40)),
@@ -68,5 +73,5 @@ export function useVoiceCall(userAddress: string | null) {
 
   useEffect(() => () => callRef.current?.hangUp(), [])
 
-  return { phase, error, activity, lines, walletRequest, order, quote, muted, startedAt, start, hangUp, toggleMute, sendWalletResult, levels }
+  return { phase, error, errorDetail, activity, lines, walletRequest, order, quote, muted, startedAt, start, hangUp, toggleMute, sendWalletResult, levels }
 }

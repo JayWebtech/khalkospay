@@ -10,7 +10,8 @@ export interface TranscriptLine {
 }
 
 export interface VoiceCallEvents {
-  phase: (phase: CallPhase, message?: string) => void
+  /** On 'error', `message` is for the user and `detail` is the browser's own error, for support. */
+  phase: (phase: CallPhase, message?: string, detail?: string) => void
   activity: (activity: AgentActivity) => void
   transcript: (line: TranscriptLine) => void
   walletRequest: (order: Order) => void
@@ -21,6 +22,89 @@ export interface VoiceCallEvents {
 const MIC_RATE = 16_000
 const AGENT_RATE = 24_000
 const MIC_CHUNK = 800
+const MIC_TIMEOUT_MS = 15_000
+const AUDIO_START_TIMEOUT_MS = 3_000
+
+// Tried in order until one opens. Every value is `ideal`, so none can be overconstrained; the
+// fallbacks skip Android's voice-call capture path (echo cancellation), which some devices can't open.
+const MIC_ATTEMPTS: (MediaTrackConstraints | true)[] = [
+  { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  true,
+  { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+]
+
+const ANDROID = /Android/i.test(navigator.userAgent)
+
+function errorName(e: unknown) {
+  return e && typeof e === 'object' && 'name' in e ? String(e.name) : ''
+}
+
+function describeError(e: unknown) {
+  const name = errorName(e)
+  const message = e && typeof e === 'object' && 'message' in e ? String(e.message) : String(e)
+  return name && message ? `${name}: ${message}` : name || message
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/** Resolves once the page has focus again, e.g. after Android's permission dialog closes. */
+function pageFocused(maxMs: number) {
+  if (document.hasFocus()) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      window.removeEventListener('focus', done)
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(done, maxMs)
+    window.addEventListener('focus', done)
+  })
+}
+
+// A permission failure won't change on retry, and retrying could prompt again.
+const isFinalMicError = (name: string) => name === 'NotAllowedError' || name === 'SecurityError' || name === 'TimeoutError' || name === 'NotSupportedError'
+
+function micFailureMessage(e: unknown) {
+  switch (errorName(e)) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return ANDROID
+        ? 'Microphone access is blocked. In Android Settings › Apps › Nimiq Pay › Permissions, set Microphone to Allow, then close and reopen Nimiq Pay.'
+        : 'Microphone access is blocked. Allow the microphone for this site and try again.'
+    case 'TimeoutError':
+      return 'Nimiq Pay never answered the microphone request. Close and reopen Nimiq Pay, then try again.'
+    case 'NotReadableError':
+    case 'AbortError':
+      // Android WebViews record with the host app's permissions, and Chromium refuses to open the mic
+      // unless the app holds both RECORD_AUDIO and MODIFY_AUDIO_SETTINGS. Only Nimiq Pay can add those.
+      return ANDROID
+        ? "Android allowed the microphone, but Nimiq Pay's in-app browser couldn't open it. Close any other app using the mic and try again. If it keeps failing, Nimiq Pay can't record audio on this phone yet."
+        : 'Your microphone is in use by another app or blocked by your system. Close other apps using it and try again.'
+    case 'NotFoundError':
+      return 'No microphone was found on this device.'
+    case 'NotSupportedError':
+      return "Nimiq Pay's in-app browser doesn't give mini apps microphone access."
+    case 'OverconstrainedError':
+      return "Your microphone doesn't support the audio format voice calls need."
+    default:
+      return "Couldn't start your microphone."
+  }
+}
+
+async function requestMic(audio: MediaTrackConstraints | true) {
+  let timedOut = false
+  const request = navigator.mediaDevices.getUserMedia({ audio })
+  // Some WebViews never settle the permission request, so don't wait forever.
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => {
+      timedOut = true
+      reject(new DOMException('No answer to the microphone request', 'TimeoutError'))
+    }, MIC_TIMEOUT_MS),
+  )
+  // A stream that arrives after the timeout would keep the mic on with nobody listening.
+  void request.then((s) => timedOut && s.getTracks().forEach((t) => t.stop()), () => {})
+  return Promise.race([request, timeout])
+}
 
 // Resamples mic audio to 16 kHz mono PCM16 in ~50 ms chunks and reports RMS level for the UI.
 const MIC_WORKLET = `
@@ -100,27 +184,33 @@ export class VoiceCall {
     this.userAddress = userAddress
   }
 
+  /** Call straight from the tap handler: audio has to be unlocked before the first await. */
   async start() {
     this.setPhase('connecting')
+    let ctx: AudioContext
+    let resumed: Promise<void>
     try {
-      // Some WebViews never settle the permission request, so don't wait forever.
-      this.stream = await Promise.race([
-        navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-        }),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new DOMException('timeout', 'NotAllowedError')), 15_000)),
-      ])
+      // Android WebViews require a user gesture for media by default, and the permission prompt
+      // outlasts the tap, so an AudioContext made after it would stay suspended and the call silent.
+      ctx = new AudioContext({ latencyHint: 'interactive' })
+      this.ctx = ctx
+      resumed = ctx.resume().catch(() => {})
     } catch (e) {
-      const blocked = e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'SecurityError')
-      this.fail(blocked ? 'Microphone access is blocked. Allow it for Nimiq Pay and try again.' : "Couldn't start your microphone.")
+      this.fail("Couldn't start audio on this device.", e)
+      return
+    }
+
+    try {
+      this.stream = await this.openMic()
+    } catch (e) {
+      if (this.phase === 'connecting') this.fail(micFailureMessage(e), e)
       return
     }
     if (this.phase !== 'connecting') return this.cleanup()
 
     try {
-      const ctx = new AudioContext({ latencyHint: 'interactive' })
-      this.ctx = ctx
-      await ctx.resume()
+      await Promise.race([resumed, sleep(AUDIO_START_TIMEOUT_MS)])
+      if (ctx.state !== 'running') throw new DOMException(`AudioContext is ${ctx.state}`, 'InvalidStateError')
       const moduleUrl = URL.createObjectURL(new Blob([MIC_WORKLET], { type: 'application/javascript' }))
       await ctx.audioWorklet.addModule(moduleUrl)
       URL.revokeObjectURL(moduleUrl)
@@ -136,8 +226,12 @@ export class VoiceCall {
       this.speakerMeter.fftSize = 512
       this.speaker = ctx.createGain()
       this.speaker.connect(this.speakerMeter).connect(ctx.destination)
-    } catch {
-      this.fail("Couldn't start audio on this device.")
+    } catch (e) {
+      if (this.phase !== 'connecting') return this.cleanup()
+      this.fail(
+        errorName(e) === 'InvalidStateError' ? "Nimiq Pay didn't let the call play sound. Tap Call again." : "Couldn't start live audio on this device.",
+        e,
+      )
       return
     }
 
@@ -153,6 +247,25 @@ export class VoiceCall {
       if (this.phase === 'connecting') this.fail("Couldn't connect the call. Please try again.")
       else if (this.phase === 'live') this.finishAfterPlayback()
     }
+  }
+
+  private async openMic() {
+    if (!navigator.mediaDevices?.getUserMedia) throw new DOMException('navigator.mediaDevices is unavailable', 'NotSupportedError')
+    let lastError: unknown
+    for (const [i, audio] of MIC_ATTEMPTS.entries()) {
+      try {
+        return await requestMic(audio)
+      } catch (e) {
+        lastError = e
+        console.warn('[voice] getUserMedia failed', audio, e)
+        if (isFinalMicError(errorName(e)) || i === MIC_ATTEMPTS.length - 1 || this.phase !== 'connecting') break
+        // Some hosts let the page in before Android's own prompt is answered, so wait for it to close.
+        await pageFocused(10_000)
+        await sleep(400)
+        if (this.phase !== 'connecting') break
+      }
+    }
+    throw lastError
   }
 
   setMuted(muted: boolean) {
@@ -294,14 +407,14 @@ export class VoiceCall {
     })
   }
 
-  private fail(message: string) {
+  private fail(message: string, cause?: unknown) {
     this.cleanup()
-    this.setPhase('error', message)
+    this.setPhase('error', message, cause === undefined ? undefined : describeError(cause))
   }
 
-  private setPhase(phase: CallPhase, message?: string) {
+  private setPhase(phase: CallPhase, message?: string, detail?: string) {
     this.phase = phase
-    this.events.phase(phase, message)
+    this.events.phase(phase, message, detail)
   }
 
   private cleanup() {
