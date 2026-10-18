@@ -69,8 +69,15 @@ export const config = {
   adminToken: process.env.ADMIN_TOKEN || '',
   /** How long an admin dashboard sign-in lasts. */
   adminSessionHours: num('ADMIN_SESSION_HOURS', 12),
-  /** Public host of the mini app (e.g. khalkospay.app), used to build Nimiq Pay links in emails. */
-  miniAppUrl: (process.env.MINIAPP_URL || '').replace(/^https?:\/\//, '').replace(/\/+$/, ''),
+  /**
+   * Public host of the mini app (e.g. khalkospay.app): where Bachs sends buyers back to, and the host in gift email links.
+   * The nimpay.app/miniapps/open/<host> link Nimiq Pay shares is accepted too; only <host> is kept, since that link 404s with a path on it.
+   */
+  miniAppUrl: (process.env.MINIAPP_URL || '')
+    .trim()
+    .replace(/^https?:\/\//, '')
+    .replace(/^(www\.)?nimpay\.app\/miniapps\/open\//, '')
+    .replace(/\/+$/, ''),
   resend: {
     apiKey: process.env.RESEND_API_KEY || '',
     from: process.env.RESEND_FROM || '',
