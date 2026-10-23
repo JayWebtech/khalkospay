@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, ChevronDown, Gift, Salad, Wallet } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, ChevronDown, Gift, Salad, ScanLine, Store, Wallet } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { AccountSheet } from '@/components/account-sheet'
@@ -109,7 +109,14 @@ export function HomePage() {
             aria-hidden="true"
             className="pointer-events-none absolute -top-28 -right-20 -z-10 size-72 rounded-full bg-[radial-gradient(closest-side,var(--color-hero-accent),transparent)] opacity-30"
           />
-          <p className="text-sm text-hero-muted">Wallet balance</p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-hero-muted">Wallet balance</p>
+            {/* Negative margins keep the 44px target without pushing the balance down. */}
+            <ButtonLink to="/scan" variant="hero" size="lg" className="-my-3 -mr-2 h-11 rounded-full px-3.5">
+              <ScanLine data-icon="inline-start" />
+              Scan to pay
+            </ButtonLink>
+          </div>
           <BalanceBlock onOpenWallet={() => setWalletOpen(true)} />
           <div className="mt-5 grid grid-cols-2 gap-2">
             <ButtonLink to="/buy" size="xl">
@@ -148,6 +155,8 @@ export function HomePage() {
       </section>
 
       <section className="grid grid-cols-2 gap-3 px-4" aria-label="More from KhalkosPay">
+        <FeatureLink to="/scan" icon={<ScanLine />} title="Scan to pay" description="Pay shops with NIM by QR code" />
+        <FeatureLink to="/merchant" icon={<Store />} title="Your shop" description="Get a QR banner and take NIM" />
         <FeatureLink to="/bitebuddy" icon={<Salad />} title="BiteBuddy" description="Eat well, grow your pet, earn points" />
         <FeatureLink to="/gifts" icon={<Gift />} title="Gift cards" description="Send NIM wrapped with a message" />
       </section>

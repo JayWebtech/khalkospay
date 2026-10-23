@@ -293,3 +293,60 @@ export interface OnrampOrder {
   failureReason: string | null
   createdAt: string
 }
+
+/** A shop that takes NIM by QR, as a payer sees it. */
+export interface Merchant {
+  /** Printed on the banner and carried by its QR link, e.g. K7QM-3XPD. */
+  code: string
+  name: string
+  category: string
+  description: string
+  phone: string | null
+  location: string | null
+  /** data: URL */
+  logo: string | null
+  payoutAddress: string
+  /** Payments go to the wallet that signed in to create the shop. */
+  payoutVerified: boolean
+  network: 'mainnet' | 'testnet'
+  since: string
+}
+
+export interface OwnMerchant extends Merchant {
+  ownerAddress: string
+  updatedAt: string
+}
+
+export type MerchantPaymentStatus = 'AWAITING_PAYMENT' | 'CONFIRMING' | 'CONFIRMED' | 'EXPIRED'
+
+interface MerchantPaymentAmounts {
+  id: string
+  reference: string
+  status: MerchantPaymentStatus
+  /** What arrived once confirmed, otherwise what was asked. */
+  nimAmount: string
+  requestedNim: string
+  receivedNim: string | null
+  underpaid: boolean
+  note: string
+  txHash: string | null
+  createdAt: string
+  confirmedAt: string | null
+}
+
+/** The payer's receipt. */
+export interface MerchantPayment extends MerchantPaymentAmounts {
+  payerAddress: string | null
+  recipient: string
+  paidFrom: string | null
+  failureReason: string | null
+  network: 'mainnet' | 'testnet'
+  payment: { recipient: string; valueLuna: number; data: string } | null
+  expiresAt: string
+  merchant: Merchant
+}
+
+/** A row in the shop's list of payments received. */
+export interface ReceivedPayment extends MerchantPaymentAmounts {
+  payerAddress: string | null
+}

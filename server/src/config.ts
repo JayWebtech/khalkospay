@@ -41,6 +41,14 @@ export const config = {
     claimAttemptsPerCard: num('GIFT_CLAIM_ATTEMPTS_PER_CARD', 10),
     claimAttemptsPerIp: num('GIFT_CLAIM_ATTEMPTS_PER_IP', 30),
   },
+  merchants: {
+    /** How long a scan-to-pay payment waits for its transaction. A payment with its memo that lands later still counts. */
+    paymentTtlSeconds: num('MERCHANT_PAYMENT_TTL_SECONDS', 1800),
+    /** How long a reported transaction may stay unfound on chain before the payment goes back to unpaid. */
+    paymentLookupTimeoutSeconds: num('MERCHANT_PAYMENT_LOOKUP_TIMEOUT_SECONDS', 1800),
+    /** Payments that expired within this window still get their merchant's address scanned for the memo. */
+    scanLookbackHours: num('MERCHANT_SCAN_LOOKBACK_HOURS', 48),
+  },
   pets: {
     revivePriceNim: process.env.PET_REVIVE_NIM || '50',
     revivePaymentTtlSeconds: num('PET_REVIVE_PAYMENT_TTL_SECONDS', 1800),

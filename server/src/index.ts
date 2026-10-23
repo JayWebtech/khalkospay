@@ -7,11 +7,13 @@ import { adminEnabled, adminRouter } from './routes/admin'
 import { authRouter } from './routes/auth'
 import { biteBuddyRouter } from './routes/bitebuddy'
 import { giftCardsRouter } from './routes/giftcards'
+import { merchantsRouter } from './routes/merchants'
 import { offrampRouter } from './routes/offramp'
 import { onrampRouter } from './routes/onramp'
 import { walletRouter } from './routes/wallet'
 import { webhooksRouter } from './routes/webhooks'
 import { startGiftCardWorker } from './services/giftcards'
+import { startMerchantWorker } from './services/merchants'
 import { canSendFromTreasury, checkRpcNetwork, giftEscrowAddress, treasuryAddress, WrongNetworkError } from './services/nimiq'
 import { startOfframpWorker } from './services/offramp'
 import { onrampEnabled, startOnrampWorker } from './services/onramp'
@@ -37,6 +39,7 @@ app.use('/api/offramp', offrampRouter)
 app.use('/api/onramp', onrampRouter)
 app.use('/api/bitebuddy', biteBuddyRouter)
 app.use('/api/giftcards', giftCardsRouter)
+app.use('/api/merchants', merchantsRouter)
 app.use('/api/admin', adminRouter)
 app.use('/api/wallet', walletRouter)
 
@@ -92,5 +95,6 @@ server.listen(config.port, () => {
 
 startOfframpWorker()
 startGiftCardWorker()
+startMerchantWorker()
 startPetWorker()
 startOnrampWorker()

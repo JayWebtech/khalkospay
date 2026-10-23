@@ -65,6 +65,16 @@ enum LedgerKind {
   REFUND
 }
 
+enum MerchantPaymentStatus {
+  /// Created when the payer taps Pay; nothing has been seen on chain yet.
+  AWAITING_PAYMENT
+  /// A transaction is attached (reported by the app or found by its memo) and waiting for confirmations.
+  CONFIRMING
+  CONFIRMED
+  /// Never paid in time. A payment with its memo that lands later still attaches.
+  EXPIRED
+}
+
 model OfframpOrder {
   id                    String        @id @default(uuid())
   reference             String        @unique
@@ -211,6 +221,57 @@ model GiftCard {
   ledger             LedgerEntry[]
 
   @@index([senderAddress, createdAt])
+  @@index([status])
+}
+
+/// A shop that accepts NIM by QR. Payments go straight to payoutAddress; KhalkosPay never holds them.
+model Merchant {
+  id            String            @id @default(uuid())
+  /// Short code printed on the banner and carried by its QR link, e.g. K7QM3XPD (shown as K7QM-3XPD).
+  code          String            @unique
+  /// The wallet that signed in and owns this profile; one profile per wallet.
+  ownerAddress  String            @unique
+  /// Where payments go. A Nimiq Pay HTLC wallet is resolved to the basic account that owns it.
+  payoutAddress String
+  name          String
+  category      String
+  description   String            @default("")
+  phone         String?
+  location      String?
+  /// Square logo as a data: URL, resized on the device before upload.
+  logo          String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  payments      MerchantPayment[]
+
+  @@index([payoutAddress])
+}
+
+/// One scan-to-pay payment. The memo (reference) lets the server find it on chain even if the app never reports it.
+model MerchantPayment {
+  id            String                @id @default(uuid())
+  merchantId    String
+  merchant      Merchant              @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  reference     String                @unique
+  /// The payout address when the payment was created, so a later profile edit never re-routes or orphans it.
+  recipient     String
+  amountLuna    BigInt
+  note          String                @default("")
+  /// The payer's account as the app reported it; the confirmed tx's sender is in paidFrom.
+  payerAddress  String?
+  status        MerchantPaymentStatus @default(AWAITING_PAYMENT)
+  txHash        String?               @unique
+  txSubmittedAt DateTime?
+  paidFrom      String?
+  receivedLuna  BigInt?
+  confirmedAt   DateTime?
+  failureReason String?
+  expiresAt     DateTime
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@index([merchantId, createdAt])
+  @@index([recipient, status])
   @@index([status])
 }
 

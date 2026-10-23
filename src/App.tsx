@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { BottomNav } from '@/components/bottom-nav'
 import { MealReminders } from '@/components/meal-reminders'
 import { flushPendingFunding } from '@/lib/gifts'
+import { flushPendingPaymentReports } from '@/lib/merchants'
 import { flushPendingDeposits } from '@/lib/offramp'
 import { flushPendingRevivals } from '@/lib/pets'
 import { startBalanceRefresh, useWallet } from '@/lib/wallet'
@@ -14,8 +15,14 @@ import { SentGiftPage } from '@/pages/gift-sent'
 import { GiftCardCreatePage } from '@/pages/giftcard-create'
 import { GiftCardsPage } from '@/pages/giftcards'
 import { HomePage } from '@/pages/home'
+import { MerchantPage } from '@/pages/merchant'
+import { MerchantBannerPage } from '@/pages/merchant-banner'
+import { MerchantProfilePage } from '@/pages/merchant-profile'
 import { OfframpPage } from '@/pages/offramp'
 import { OfframpOrderPage } from '@/pages/offramp-order'
+import { PayAddressPage, PayMerchantPage } from '@/pages/pay'
+import { PayReceiptPage } from '@/pages/pay-receipt'
+import { ScanPage } from '@/pages/scan'
 import { VoiceOfframpPage } from '@/pages/voice-offramp'
 
 export function App() {
@@ -29,6 +36,7 @@ export function App() {
     void flushPendingDeposits()
     void flushPendingFunding()
     void flushPendingRevivals()
+    void flushPendingPaymentReports()
   }, [detect])
 
   useEffect(() => {
@@ -50,6 +58,13 @@ export function App() {
           <Route path="/gifts/new" element={<GiftCardCreatePage />} />
           <Route path="/gifts/:id" element={<SentGiftPage />} />
           <Route path="/gift/:id" element={<GiftRedeemPage />} />
+          <Route path="/scan" element={<ScanPage />} />
+          <Route path="/pay/address/:address" element={<PayAddressPage />} />
+          <Route path="/pay/:code" element={<PayMerchantPage />} />
+          <Route path="/receipt/:id" element={<PayReceiptPage />} />
+          <Route path="/merchant" element={<MerchantPage />} />
+          <Route path="/merchant/profile" element={<MerchantProfilePage />} />
+          <Route path="/merchant/banner" element={<MerchantBannerPage />} />
           <Route path="/offramp" element={<Navigate to="/cash-out" replace />} />
           <Route path="/voice" element={<Navigate to="/call" replace />} />
           <Route path="/giftcards/*" element={<Navigate to="/gifts" replace />} />
