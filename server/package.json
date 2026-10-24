@@ -1,6 +1,7 @@
 {
   "name": "khalkospay-server",
   "version": "1.0.0",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
