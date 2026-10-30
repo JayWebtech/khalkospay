@@ -401,7 +401,7 @@ async function advancePayout(order: OfframpOrder) {
         amountKobo: order.payoutKobo,
         recipientCode,
         reference: order.reference,
-        reason: `KhalkosPay: ${formatNim(order.nimLuna)} NIM off-ramp`,
+        reason: `Khalkos: ${formatNim(order.nimLuna)}`,
       })
       await prisma.offrampOrder.update({ where: { id: order.id }, data: { paystackTransferCode: result.transferCode } })
     } else {
@@ -487,7 +487,7 @@ async function advanceRefund(order: OfframpOrder) {
   // A signed tx is only valid for ~2h; past that window it can never land, so re-sign safely.
   if ((tx && !tx.success) || Date.now() - order.refundSentAt.getTime() > REFUND_VALIDITY_MS) return sendRefund(order)
   if (!tx && !throttled(`refund:${order.id}`, 60_000)) {
-    await broadcastTransaction(order.refundTxHex).catch(() => {})
+    await broadcastTransaction(order.refundTxHex).catch(() => { })
   }
 }
 
