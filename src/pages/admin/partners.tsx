@@ -1,4 +1,4 @@
-import { BookOpen, Plus, RefreshCw } from 'lucide-react'
+import { BookOpen, Braces, Plus, RefreshCw } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Muted } from '@/components/admin/cells'
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { type AdminPartner, createPartner, useAdminQuery } from '@/lib/admin'
+import { API_URL } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 const activeKeys = (p: AdminPartner, mode: 'test' | 'live') => p.apiKeys.filter((k) => k.mode === mode && (k.status === 'active' || k.status === 'expiring')).length
@@ -31,6 +32,10 @@ export function AdminPartnersPage() {
           <a href="/developers" target="_blank" rel="noreferrer" className={buttonVariants({ variant: 'outline', size: 'lg' })}>
             <BookOpen aria-hidden="true" />
             API docs
+          </a>
+          <a href={`${API_URL}/v1/docs`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: 'outline', size: 'lg' })}>
+            <Braces aria-hidden="true" />
+            Swagger UI
           </a>
           <Button variant="outline" size="lg" onClick={reload} disabled={loading} aria-label="Refresh">
             <RefreshCw className={cn(loading && 'animate-spin')} aria-hidden="true" />

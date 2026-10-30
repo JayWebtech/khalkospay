@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 
 const BASE = `${API_URL}/v1`
 const SPEC = `${BASE}/openapi.json`
+const SWAGGER = `${BASE}/docs`
 
 const sections = [
   { id: 'overview', label: 'Overview' },
@@ -43,10 +44,16 @@ export function DevelopersApp() {
           <BrandMark className="size-6" />
           <span className="font-heading text-[0.9375rem] font-semibold">KhalkosPay</span>
           <span className="text-sm text-muted-foreground">Developers</span>
-          <a href={SPEC} target="_blank" rel="noreferrer" className="ml-auto flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline">
-            OpenAPI spec
-            <ExternalLink className="size-3.5" aria-hidden="true" />
-          </a>
+          <div className="ml-auto flex items-center gap-4">
+            <a href={SWAGGER} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline">
+              Swagger UI
+              <ExternalLink className="size-3.5" aria-hidden="true" />
+            </a>
+            <a href={SPEC} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline max-sm:hidden">
+              OpenAPI spec
+              <ExternalLink className="size-3.5" aria-hidden="true" />
+            </a>
+          </div>
         </div>
       </header>
 
@@ -164,7 +171,7 @@ function Overview() {
         {[
           ['Base URL', BASE],
           ['Format', 'JSON over HTTPS, server to server'],
-          ['Reference', '/v1/openapi.json (OpenAPI 3.1)'],
+          ['Reference', '/v1/docs (Swagger UI) · /v1/openapi.json (OpenAPI 3.1)'],
         ].map(([k, v]) => (
           <div key={k} className="rounded-xl bg-card p-3 ring-1 ring-foreground/10">
             <div className="text-xs text-muted-foreground">{k}</div>
@@ -525,7 +532,11 @@ function Reference() {
   return (
     <Section id="reference" title="Endpoints">
       <P>
-        All paths are under <C>{BASE}</C>. Request and response schemas are in the{' '}
+        All paths are under <C>{BASE}</C>. Browse and try every endpoint in{' '}
+        <a href={SWAGGER} target="_blank" rel="noreferrer" className="font-medium text-primary underline underline-offset-4">
+          Swagger UI
+        </a>{' '}
+        with a test key (Authorize, then paste it). Request and response schemas are in the{' '}
         <a href={SPEC} target="_blank" rel="noreferrer" className="font-medium text-primary underline underline-offset-4">
           OpenAPI spec
         </a>

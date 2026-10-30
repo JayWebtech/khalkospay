@@ -258,9 +258,41 @@ v1Router.use((_req, res, next) => {
 })
 v1Router.use(express.json({ limit: '100kb' }))
 
+/** PUBLIC_API_URL, else this request's own origin. Hosts like Railway end TLS in front of us, so trust their X-Forwarded-Proto. */
+function publicOrigin(req: Request) {
+  if (config.partnerApi.publicUrl) return config.partnerApi.publicUrl
+  const forwarded = req.get('x-forwarded-proto')?.split(',')[0]?.trim()
+  const protocol = forwarded === 'https' || forwarded === 'http' ? forwarded : req.protocol
+  return `${protocol}://${req.get('host')}`
+}
+
 v1Router.get('/openapi.json', (req, res) => {
   res.set('Cache-Control', 'public, max-age=300')
-  res.json(openApiSpec(config.partnerApi.publicUrl || `${req.protocol}://${req.get('host')}`))
+  res.json(openApiSpec(publicOrigin(req)))
+})
+
+const SWAGGER_UI = 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14'
+
+/** Swagger UI for the spec above: browse every endpoint and try them with a test key. */
+v1Router.get('/docs', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=300')
+  res.type('html').send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KhalkosPay off-ramp API</title>
+    <link rel="stylesheet" href="${SWAGGER_UI}/swagger-ui.css" />
+    <style>body { margin: 0; background: #fafafa; } .swagger-ui .topbar { display: none; }</style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="${SWAGGER_UI}/swagger-ui-bundle.js" crossorigin></script>
+    <script>
+      window.ui = SwaggerUIBundle({ url: '${req.baseUrl}/openapi.json', dom_id: '#swagger-ui', deepLinking: true, displayRequestDuration: true })
+    </script>
+  </body>
+</html>`)
 })
 
 const authenticate: RequestHandler = async (req, res, next) => {
@@ -445,7 +477,7 @@ v1Router.get('/webhooks/events', async (req, res) => {
 })
 
 v1Router.use((_req, res) => {
-  res.status(404).json(errorBody('not_found', 'No such endpoint. See /v1/openapi.json for the API.'))
+  res.status(404).json(errorBody('not_found', 'No such endpoint. See /v1/docs for the API.'))
 })
 
 v1Router.use(errorHandler)
