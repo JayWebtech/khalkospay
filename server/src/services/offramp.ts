@@ -5,6 +5,7 @@ import { config } from '../config'
 import { HttpError } from '../lib/http-error'
 import { prisma } from '../lib/prisma'
 import { attachScannedFunding, GIFT_REFERENCE_PREFIX } from './giftcards'
+import { notifyWebhooks, recordOrderEvents } from './partner-webhooks'
 import { attachScannedRevivalPayment, REVIVE_REFERENCE_PREFIX } from './pets'
 import {
   broadcastTransaction,
@@ -15,6 +16,7 @@ import {
   listTransactions,
   LUNA_PER_NIM,
   normalizeAddress,
+  NotPayableError,
   parseNimToLuna,
   resolvePayoutAddress,
   resolveTxHash,
@@ -31,6 +33,7 @@ import {
   verifyTransfer,
 } from './paystack'
 import { getNimNgnRate } from './rates'
+import { randomSandboxAddress, randomSandboxHash, SANDBOX_BANKS, sandboxResolveAccount } from './sandbox'
 
 /** Emits 'updated' with the fresh OfframpOrder after every committed status change. */
 export const orderEvents = new EventEmitter()
@@ -127,29 +130,64 @@ export function parseAmount(nimAmount: string | number): bigint {
   }
 }
 
-export async function verifyBankAccount(bankCode: string, rawAccountNumber: string) {
+/** Banks that can be paid. The sandbox (livemode false) gets a fixed list and never calls Paystack. */
+export const banksFor = (livemode: boolean) => (livemode ? listBanks() : Promise.resolve(SANDBOX_BANKS))
+
+export async function verifyBankAccount(bankCode: string, rawAccountNumber: string, livemode = true) {
   const accountNumber = String(rawAccountNumber).replace(/\D/g, '')
   if (accountNumber.length !== 10) throw new HttpError(400, 'Account number must be 10 digits', 'INVALID_ACCOUNT_NUMBER')
-  const bank = (await listBanks()).find((b) => b.code === bankCode)
+  const bank = (await banksFor(livemode)).find((b) => b.code === bankCode)
   if (!bank) throw new HttpError(400, 'This bank is not supported', 'INVALID_BANK')
-  const accountName = await resolveAccount(accountNumber, bank.code)
+  const accountName = livemode ? await resolveAccount(accountNumber, bank.code) : sandboxResolveAccount(accountNumber, bank.code)
   return { bank, accountNumber, accountName }
 }
 
+/** A partner's refund address: a valid Nimiq address that isn't ours. Live ones must also be able to receive NIM. */
+async function parseRefundAddress(raw: string, livemode: boolean) {
+  let address: string
+  try {
+    address = normalizeAddress(raw)
+  } catch {
+    throw new HttpError(400, 'refundAddress is not a valid Nimiq address', 'INVALID_REFUND_ADDRESS')
+  }
+  if (address === treasuryAddress) throw new HttpError(400, 'refundAddress can’t be the KhalkosPay deposit address', 'INVALID_REFUND_ADDRESS')
+  if (livemode) {
+    await resolvePayoutAddress(address).catch((e) => {
+      if (e instanceof NotPayableError) throw new HttpError(400, `refundAddress can’t receive NIM: ${e.message}`, 'INVALID_REFUND_ADDRESS')
+      throw e
+    })
+  }
+  return address
+}
+
+export interface PartnerOrderInput {
+  id: string
+  livemode: boolean
+  reference: string | null
+  metadata: Prisma.InputJsonObject | null
+  refundAddress: string | null
+}
+
 export async function createOrder(input: {
-  userAddress: string
+  userAddress?: string
   nimAmount: string | number
   bankCode: string
   accountNumber: string
-  source?: 'app' | 'voice'
+  source?: 'app' | 'voice' | 'api'
+  /** Set for orders made through /v1. A test-key order (livemode false) is simulated and never needs the treasury. */
+  partner?: PartnerOrderInput
 }): Promise<OfframpOrder> {
-  requireTreasury()
-  let userAddress: string
-  try {
-    userAddress = normalizeAddress(input.userAddress)
-  } catch {
-    throw new HttpError(400, 'Invalid Nimiq address', 'INVALID_ADDRESS')
+  const livemode = input.partner?.livemode ?? true
+  if (livemode) requireTreasury()
+  let userAddress: string | null = null
+  if (input.userAddress !== undefined || !input.partner) {
+    try {
+      userAddress = normalizeAddress(input.userAddress ?? '')
+    } catch {
+      throw new HttpError(400, 'Invalid Nimiq address', 'INVALID_ADDRESS')
+    }
   }
+  const refundAddress = input.partner?.refundAddress ? await parseRefundAddress(input.partner.refundAddress, livemode) : null
   const nimLuna = parseAmount(input.nimAmount)
   const q = await quoteLuna(nimLuna)
   const limits = quoteDto(q)
@@ -159,13 +197,19 @@ export async function createOrder(input: {
   if (limits.aboveMaximum) {
     throw new HttpError(400, `Maximum payout is ₦${config.offramp.maxPayoutNgn.toLocaleString()} per order`, 'ABOVE_MAXIMUM')
   }
-  const { bank, accountNumber, accountName } = await verifyBankAccount(input.bankCode, input.accountNumber)
+  const { bank, accountNumber, accountName } = await verifyBankAccount(input.bankCode, input.accountNumber, livemode)
 
   const order = await prisma.offrampOrder.create({
     data: {
-      reference: `khalkos-${randomBytes(8).toString('hex')}`,
+      // Sandbox memos look different, and the treasury scan ignores their orders even if real NIM arrives with one.
+      reference: `khalkos-${livemode ? '' : 'test-'}${randomBytes(8).toString('hex')}`,
       source: input.source ?? 'app',
       userAddress,
+      livemode,
+      partnerId: input.partner?.id ?? null,
+      partnerReference: input.partner?.reference ?? null,
+      metadata: input.partner?.metadata ?? undefined,
+      refundAddress,
       nimLuna,
       rateNgnPerNim: new Prisma.Decimal(q.rateNgnPerNim.toFixed(8)),
       grossKobo: q.grossKobo,
@@ -217,6 +261,7 @@ export async function submitDeposit(orderId: string, hashOrSerializedTx: string)
 const DEPOSIT_ATTACHABLE: OfframpStatus[] = ['AWAITING_DEPOSIT', 'EXPIRED', 'REJECTED']
 
 async function attachDeposit(order: OfframpOrder, hash: string): Promise<OfframpOrder> {
+  if (!order.livemode) throw new HttpError(409, 'Sandbox orders only take simulated deposits', 'SANDBOX_ORDER')
   if (!DEPOSIT_ATTACHABLE.includes(order.status) || order.depositTxHash) {
     throw new HttpError(409, 'This order is no longer waiting for a deposit', 'ORDER_NOT_AWAITING_DEPOSIT')
   }
@@ -247,14 +292,17 @@ async function transition(
 ): Promise<OfframpOrder | null> {
   const moved = await prisma.$transaction(async (db) => {
     const res = await db.offrampOrder.updateMany({ where: { id: order.id, status: order.status }, data: { ...data, status: to } })
-    if (res.count === 0) return false
+    if (res.count === 0) return null
     if (ledger) await db.ledgerEntry.create({ data: { ...ledger, orderId: order.id } })
-    return true
+    const updated = await db.offrampOrder.findUniqueOrThrow({ where: { id: order.id } })
+    // Partner webhooks are written with the change itself, so none is lost if the process dies right after.
+    const events = await recordOrderEvents(db, order.status, updated)
+    return { updated, events }
   })
   if (!moved) return null
-  const updated = await prisma.offrampOrder.findUniqueOrThrow({ where: { id: order.id } })
-  orderEvents.emit('updated', updated)
-  return updated
+  orderEvents.emit('updated', moved.updated)
+  if (moved.events > 0) notifyWebhooks()
+  return moved.updated
 }
 
 const inFlight = new Set<string>()
@@ -273,6 +321,7 @@ export async function processOrder(id: string) {
   try {
     const order = await prisma.offrampOrder.findUnique({ where: { id } })
     if (!order) return
+    if (!order.livemode) return await advanceSandbox(order)
     switch (order.status) {
       case 'CONFIRMING':
         return await confirmDeposit(order)
@@ -371,7 +420,7 @@ async function advancePayout(order: OfframpOrder) {
 
 export async function applyTransferStatus(reference: string, status: TransferStatus) {
   const order = await prisma.offrampOrder.findUnique({ where: { reference } })
-  if (!order) return
+  if (!order?.livemode) return
 
   if (status === 'success' && order.status === 'PAYING_OUT') {
     await transition(
@@ -406,14 +455,15 @@ export async function applyTransferStatus(reference: string, status: TransferSta
 }
 
 async function startRefund(order: OfframpOrder) {
-  if (!canSendFromTreasury || !order.receivedLuna || !order.depositFrom) return
+  if (!canSendFromTreasury || !order.receivedLuna || !(order.refundAddress || order.depositFrom)) return
   const claimed = await transition(order, 'REFUNDING')
   if (claimed) await sendRefund(claimed)
 }
 
 async function sendRefund(order: OfframpOrder) {
+  // A partner's refundAddress wins: exchanges and custodial wallets send from addresses that can't take NIM back.
   // A Nimiq Pay deposit comes from its HTLC wallet, which can't receive a transfer; refund the wallet that owns it.
-  const target = await resolvePayoutAddress(order.depositFrom!)
+  const target = await resolvePayoutAddress(order.refundAddress ?? order.depositFrom!)
   const { hash, hex } = await buildTreasuryTransaction(target, order.receivedLuna!, `refund ${order.reference}`)
   await prisma.offrampOrder.update({ where: { id: order.id }, data: { refundTxHash: hash, refundTxHex: hex, refundSentAt: new Date() } })
   lastPoll.set(`refund:${order.id}`, Date.now())
@@ -460,7 +510,7 @@ async function scanTreasuryDeposits() {
       continue
     }
     const order = await prisma.offrampOrder.findUnique({ where: { reference: tx.data.trim() } })
-    if (!order || order.depositTxHash || !DEPOSIT_ATTACHABLE.includes(order.status)) continue
+    if (!order?.livemode || order.depositTxHash || !DEPOSIT_ATTACHABLE.includes(order.status)) continue
     if (await prisma.offrampOrder.findUnique({ where: { depositTxHash: tx.hash } })) continue
     await attachDeposit(order, tx.hash).catch((e) => console.error(`[offramp] auto-attach ${order.id} failed:`, e.message))
   }
@@ -480,7 +530,13 @@ export function startOfframpWorker(intervalMs = 5_000) {
       const statuses: OfframpStatus[] = ['CONFIRMING', 'PAYING_OUT', 'REFUNDING']
       if (canSendFromTreasury) statuses.push('PAYOUT_FAILED')
       const active = await prisma.offrampOrder.findMany({
-        where: { status: { in: statuses } },
+        where: {
+          OR: [
+            { livemode: true, status: { in: statuses } },
+            // Sandbox orders advance on timers; this picks up any a restart left behind.
+            { livemode: false, status: { in: SANDBOX_ACTIVE }, updatedAt: { lt: new Date(Date.now() - config.partnerApi.sandboxStepMs) } },
+          ],
+        },
         select: { id: true },
         orderBy: { updatedAt: 'asc' },
         take: 50,
@@ -495,6 +551,101 @@ export function startOfframpWorker(intervalMs = 5_000) {
   const timer = setInterval(tick, intervalMs)
   void tick()
   return () => clearInterval(timer)
+}
+
+// ------------------------------------------------------------------------------------------- sandbox
+// Orders made with a partner's test key go through the same states, transitions and webhooks as live ones, but every
+// chain and bank step is simulated: nothing here talks to the Nimiq network or Paystack, and nothing is booked in the ledger.
+
+const SANDBOX_ACTIVE: OfframpStatus[] = ['CONFIRMING', 'PAYING_OUT', 'PAYOUT_FAILED', 'REFUNDING']
+
+function scheduleSandboxStep(id: string) {
+  setTimeout(() => void processOrder(id), config.partnerApi.sandboxStepMs).unref()
+}
+
+function requireSandbox(order: OfframpOrder) {
+  if (order.livemode) throw new HttpError(403, 'Only orders made with a test key can be simulated', 'SANDBOX_ONLY')
+}
+
+/** One simulated step, once the order has sat in its state for sandboxStepMs. */
+async function advanceSandbox(order: OfframpOrder) {
+  if (!SANDBOX_ACTIVE.includes(order.status)) return
+  if (Date.now() - order.updatedAt.getTime() < config.partnerApi.sandboxStepMs - 50) return
+  let next: OfframpOrder | null = null
+  switch (order.status) {
+    case 'CONFIRMING': {
+      const received = order.receivedLuna ?? 0n
+      const late = (order.depositSubmittedAt?.getTime() ?? Date.now()) > order.expiresAt.getTime() + config.offramp.depositGraceSeconds * 1000
+      const failureReason =
+        received < order.nimLuna
+          ? `Received ${formatNim(received)} NIM but this order needs ${formatNim(order.nimLuna)} NIM`
+          : late
+            ? 'Your quote expired before the NIM arrived'
+            : null
+      next = await transition(order, failureReason ? 'PAYOUT_FAILED' : 'PAYING_OUT', { depositConfirmedAt: new Date(), failureReason })
+      break
+    }
+    case 'PAYING_OUT':
+      next = order.sandboxPayoutFails
+        ? await transition(order, 'PAYOUT_FAILED', { failureReason: 'Your bank transfer was failed' })
+        : await transition(order, 'COMPLETED', { paidAt: new Date(), failureReason: null })
+      break
+    case 'PAYOUT_FAILED':
+      next = await transition(order, 'REFUNDING', { refundTxHash: randomSandboxHash(), refundSentAt: new Date() })
+      break
+    case 'REFUNDING':
+      next = await transition(order, 'REFUNDED')
+      break
+  }
+  if (next && SANDBOX_ACTIVE.includes(next.status)) scheduleSandboxStep(next.id)
+}
+
+/**
+ * A pretend deposit for a sandbox order: by default the exact amount from a random sender, paid out in full.
+ * A smaller amount, a payout failure, or a deposit after the order expired each end in a (simulated) refund.
+ */
+export async function simulateSandboxDeposit(
+  order: OfframpOrder,
+  input: { nimLuna?: bigint; from?: string; payoutFails?: boolean; txHash?: string },
+): Promise<OfframpOrder> {
+  requireSandbox(order)
+  if (!DEPOSIT_ATTACHABLE.includes(order.status) || order.depositTxHash) {
+    throw new HttpError(409, 'This order is no longer waiting for a deposit', 'ORDER_NOT_AWAITING_DEPOSIT')
+  }
+  try {
+    const res = await prisma.offrampOrder.updateMany({
+      where: { id: order.id, status: order.status, depositTxHash: null },
+      data: {
+        status: 'CONFIRMING',
+        depositTxHash: input.txHash ?? randomSandboxHash(),
+        depositSubmittedAt: new Date(),
+        depositFrom: input.from ?? randomSandboxAddress(),
+        receivedLuna: input.nimLuna ?? order.nimLuna,
+        sandboxPayoutFails: input.payoutFails ?? false,
+        failureReason: null,
+      },
+    })
+    if (res.count === 0) throw new HttpError(409, 'This order changed, please refresh', 'ORDER_CONFLICT')
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      throw new HttpError(409, 'This transaction is already attached to another order', 'TX_ALREADY_USED')
+    }
+    throw e
+  }
+  const updated = await prisma.offrampOrder.findUniqueOrThrow({ where: { id: order.id } })
+  orderEvents.emit('updated', updated)
+  scheduleSandboxStep(updated.id)
+  return updated
+}
+
+/** Expires a sandbox order now, as if its quote ran out with no deposit. A deposit simulated after this is late. */
+export async function expireSandboxOrder(order: OfframpOrder): Promise<OfframpOrder> {
+  requireSandbox(order)
+  if (order.status !== 'AWAITING_DEPOSIT') throw new HttpError(409, 'Only an order waiting for its deposit can expire', 'ORDER_NOT_AWAITING_DEPOSIT')
+  const expiresAt = new Date(Date.now() - config.offramp.depositGraceSeconds * 1000 - 1000)
+  const expired = await transition(order, 'EXPIRED', { expiresAt })
+  if (!expired) throw new HttpError(409, 'This order changed, please refresh', 'ORDER_CONFLICT')
+  return expired
 }
 
 function maskAccount(accountNumber: string) {

@@ -198,3 +198,78 @@ export type SettleBody = { action: 'send'; mode: 'full' | 'pro-rata'; note?: str
 export function settleBuy(id: string, body: SettleBody) {
   return adminApi<AdminOnrampOrder>(`/api/admin/onramp/${encodeURIComponent(id)}/settle`, { json: body })
 }
+
+// ------------------------------------------------------------------------------------------------- partners
+
+export type ApiMode = 'test' | 'live'
+
+export interface AdminApiKey {
+  id: string
+  mode: ApiMode
+  /** The key's first 16 characters; the rest is never stored. */
+  prefix: string
+  label: string
+  status: 'active' | 'expiring' | 'expired' | 'revoked'
+  lastUsedAt: string | null
+  expiresAt: string | null
+  revokedAt: string | null
+  replacedById: string | null
+  createdAt: string
+}
+
+export interface AdminPartner {
+  id: string
+  name: string
+  contactEmail: string | null
+  disabled: boolean
+  disabledAt: string | null
+  webhooks: Record<ApiMode, { url: string | null; secret: string }>
+  apiKeys: AdminApiKey[]
+  orders: Record<ApiMode, number> | null
+  createdAt: string
+}
+
+/** The only response that ever holds a full secret key. */
+export interface NewApiKey {
+  secret: string
+  apiKey: AdminApiKey
+}
+
+export const WEBHOOK_EVENT_TYPES = ['offramp.deposit_confirmed', 'offramp.paid', 'offramp.payout_failed', 'offramp.refunded', 'offramp.expired'] as const
+
+export interface AdminWebhookEvent {
+  id: string
+  type: string
+  livemode: boolean
+  orderId: string | null
+  status: 'pending' | 'delivered' | 'failed' | 'skipped'
+  attempts: number
+  nextAttemptAt: string | null
+  deliveredAt: string | null
+  lastError: string | null
+  createdAt: string
+  payload: unknown
+  deliveries: { attempt: number; url: string; statusCode: number | null; error: string | null; responseBody: string | null; durationMs: number; createdAt: string }[]
+}
+
+export type PartnerUpdate = Partial<{ name: string; contactEmail: string; webhookUrlTest: string; webhookUrlLive: string; disabled: boolean }>
+
+const partnerPath = (id: string) => `/api/admin/partners/${encodeURIComponent(id)}`
+
+export const createPartner = (body: { name: string; contactEmail?: string }) => adminApi<AdminPartner>('/api/admin/partners', { json: body })
+
+export const updatePartner = (id: string, body: PartnerUpdate) => adminApi<AdminPartner>(partnerPath(id), { method: 'PATCH', json: body })
+
+export const createApiKey = (id: string, mode: ApiMode, label: string) => adminApi<NewApiKey>(`${partnerPath(id)}/keys`, { json: { mode, label } })
+
+export const rotateApiKey = (id: string, keyId: string, graceHours: number) =>
+  adminApi<NewApiKey>(`${partnerPath(id)}/keys/${encodeURIComponent(keyId)}/rotate`, { json: { graceHours } })
+
+export const revokeApiKey = (id: string, keyId: string) => adminApi<AdminApiKey>(`${partnerPath(id)}/keys/${encodeURIComponent(keyId)}/revoke`, { method: 'POST' })
+
+export const rotateWebhookSecret = (id: string, mode: ApiMode) => adminApi<AdminPartner>(`${partnerPath(id)}/webhook-secret/rotate`, { json: { mode } })
+
+export const sendTestWebhook = (id: string, mode: ApiMode, type: string) => adminApi<AdminWebhookEvent>(`${partnerPath(id)}/webhooks/test`, { json: { mode, type } })
+
+export const retryWebhookEvent = (id: string, eventId: string) =>
+  adminApi<AdminWebhookEvent>(`${partnerPath(id)}/webhook-events/${encodeURIComponent(eventId)}/retry`, { method: 'POST' })

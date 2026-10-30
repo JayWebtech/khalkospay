@@ -23,6 +23,10 @@ const TONE: Record<string, Tone> = {
   REFUNDED: 'secondary',
   RESOLVED: 'secondary',
   EXPIRED: 'secondary',
+  DELIVERED: 'success',
+  PENDING: 'pending',
+  FAILED: 'destructive',
+  SKIPPED: 'secondary',
 }
 
 /** AWAITING_PAYMENT → "Awaiting payment". */

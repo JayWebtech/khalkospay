@@ -76,12 +76,26 @@ enum MerchantPaymentStatus {
 }
 
 model OfframpOrder {
-  id                    String        @id @default(uuid())
-  reference             String        @unique
-  source                String        @default("app")
-  userAddress           String
+  id                    String                @id @default(uuid())
+  reference             String                @unique
+  /// app, voice, or api (made by a partner through /v1).
+  source                String                @default("app")
+  /// The wallet that started it in the app. Null for partner API orders, whose users may have no wallet of their own.
+  userAddress           String?
+  /// False for orders made with a partner's test key: simulated end to end, never on chain or at Paystack.
+  livemode              Boolean               @default(true)
+  partnerId             String?
+  partner               Partner?              @relation(fields: [partnerId], references: [id])
+  /// The partner's own id for this cash-out (not unique) and their key/value notes, both echoed back to them.
+  partnerReference      String?
+  metadata              Json?
+  /// Where a refund goes instead of the deposit's sender. Deposits from exchanges and custodial wallets come from
+  /// addresses that can't take a refund, so partners can name the right one.
+  refundAddress         String?
+  /// Sandbox only: the simulated bank transfer fails, so the order goes on to a refund.
+  sandboxPayoutFails    Boolean               @default(false)
   nimLuna               BigInt
-  rateNgnPerNim         Decimal       @db.Decimal(24, 8)
+  rateNgnPerNim         Decimal               @db.Decimal(24, 8)
   grossKobo             BigInt
   feeKobo               BigInt
   payoutKobo            BigInt
@@ -89,8 +103,8 @@ model OfframpOrder {
   bankName              String
   accountNumber         String
   accountName           String
-  status                OfframpStatus @default(AWAITING_DEPOSIT)
-  depositTxHash         String?       @unique
+  status                OfframpStatus         @default(AWAITING_DEPOSIT)
+  depositTxHash         String?               @unique
   depositSubmittedAt    DateTime?
   depositConfirmedAt    DateTime?
   depositFrom           String?
@@ -103,31 +117,149 @@ model OfframpOrder {
   refundSentAt          DateTime?
   failureReason         String?
   expiresAt             DateTime
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
   ledger                LedgerEntry[]
+  webhookEvents         PartnerWebhookEvent[]
 
   @@index([userAddress, createdAt])
   @@index([status])
+  @@index([partnerId, livemode, createdAt])
+}
+
+/// A developer (wallet, exchange, mini app) using the off-ramp API at /v1. Managed in the admin dashboard.
+model Partner {
+  id                String                  @id @default(uuid())
+  name              String
+  contactEmail      String?
+  /// Where offramp.* events are sent, per mode. Test-key orders only ever go to the test URL.
+  webhookUrlTest    String?
+  webhookUrlLive    String?
+  /// HMAC-SHA256 signing secrets (whsec_…), per mode. Kept in full because every delivery is signed with them.
+  webhookSecretTest String
+  webhookSecretLive String
+  /// A disabled partner's keys all stop working; its orders still finish.
+  disabledAt        DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  apiKeys           PartnerApiKey[]
+  orders            OfframpOrder[]
+  webhookEvents     PartnerWebhookEvent[]
+  idempotencyKeys   PartnerIdempotencyKey[]
+}
+
+/// A secret key for /v1: kp_test_… or kp_live_…. Only its SHA-256 and a short prefix are stored; the full key is shown once.
+model PartnerApiKey {
+  id           String    @id @default(uuid())
+  partnerId    String
+  partner      Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  livemode     Boolean
+  /// The key's first characters (e.g. kp_test_Ab3dE9xQ): shown in the dashboard and used to look the key up.
+  prefix       String    @unique
+  /// SHA-256 of the whole key, hex.
+  keyHash      String
+  label        String    @default("")
+  lastUsedAt   DateTime?
+  /// Set on rotation: the old key keeps working until then, so the partner can deploy the new one.
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  /// The key that replaced this one when it was rotated.
+  replacedById String?
+  createdAt    DateTime  @default(now())
+
+  @@index([partnerId])
+}
+
+enum WebhookEventStatus {
+  /// Waiting for its next delivery attempt.
+  PENDING
+  DELIVERED
+  /// Every retry failed.
+  FAILED
+  /// The partner had no webhook URL for this mode when it was due.
+  SKIPPED
+}
+
+/// One event for a partner, written in the same transaction as the order change it reports (an outbox), then delivered.
+model PartnerWebhookEvent {
+  id            String                   @id @default(uuid())
+  partnerId     String
+  partner       Partner                  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  livemode      Boolean
+  /// offramp.deposit_confirmed, offramp.paid, offramp.payout_failed, offramp.refunded, offramp.expired.
+  type          String
+  /// Null for test events sent from the dashboard or POST /v1/webhooks/test.
+  orderId       String?
+  order         OfframpOrder?            @relation(fields: [orderId], references: [id])
+  /// The exact JSON body sent (and signed) on every attempt.
+  payload       String
+  status        WebhookEventStatus       @default(PENDING)
+  attempts      Int                      @default(0)
+  nextAttemptAt DateTime?                @default(now())
+  deliveredAt   DateTime?
+  lastError     String?
+  createdAt     DateTime                 @default(now())
+  deliveries    PartnerWebhookDelivery[]
+
+  /// Each kind of event happens at most once per order.
+  @@unique([orderId, type])
+  @@index([status, nextAttemptAt])
+  @@index([partnerId, livemode, createdAt])
+}
+
+/// One HTTP attempt at delivering a webhook event: the delivery log.
+model PartnerWebhookDelivery {
+  id           String              @id @default(uuid())
+  eventId      String
+  event        PartnerWebhookEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  attempt      Int
+  url          String
+  statusCode   Int?
+  /// Network error or timeout, when no HTTP response came back.
+  error        String?
+  /// The start of the response body, for debugging.
+  responseBody String?
+  durationMs   Int
+  createdAt    DateTime            @default(now())
+
+  @@index([eventId])
+}
+
+/// A POST to /v1 and its Idempotency-Key: the same key and request get the stored response instead of running twice.
+model PartnerIdempotencyKey {
+  id          String   @id @default(uuid())
+  partnerId   String
+  partner     Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  livemode    Boolean
+  key         String
+  /// SHA-256 of method, path and body. Reusing a key for a different request is refused.
+  requestHash String
+  /// Null while the first request is still running.
+  statusCode  Int?
+  response    String?
+  createdAt   DateTime @default(now())
+
+  @@unique([partnerId, livemode, key])
+  @@index([createdAt])
 }
 
 model LedgerEntry {
-  id          String        @id @default(uuid())
-  orderId     String?
-  order       OfframpOrder? @relation(fields: [orderId], references: [id])
-  giftCardId  String?
-  giftCard    GiftCard?     @relation(fields: [giftCardId], references: [id])
-  revivalId   String?
-  revival     PetRevival?   @relation(fields: [revivalId], references: [id])
+  id            String        @id @default(uuid())
+  orderId       String?
+  order         OfframpOrder? @relation(fields: [orderId], references: [id])
+  giftCardId    String?
+  giftCard      GiftCard?     @relation(fields: [giftCardId], references: [id])
+  revivalId     String?
+  revival       PetRevival?   @relation(fields: [revivalId], references: [id])
   onrampOrderId String?
-  onrampOrder   OnrampOrder? @relation(fields: [onrampOrderId], references: [id])
-  kind        LedgerKind
-  asset       String
-  amount      BigInt
-  debit       String
-  credit      String
-  externalRef String
-  createdAt   DateTime      @default(now())
+  onrampOrder   OnrampOrder?  @relation(fields: [onrampOrderId], references: [id])
+  kind          LedgerKind
+  asset         String
+  amount        BigInt
+  debit         String
+  credit        String
+  externalRef   String
+  createdAt     DateTime      @default(now())
 
   @@unique([orderId, kind])
   @@unique([giftCardId, kind])

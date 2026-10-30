@@ -11,6 +11,8 @@ import { AdminGiftsPage } from '@/pages/admin/gifts'
 import { AdminLedgerPage } from '@/pages/admin/ledger'
 import { AdminLoginPage } from '@/pages/admin/login'
 import { AdminOverviewPage } from '@/pages/admin/overview'
+import { AdminPartnerPage } from '@/pages/admin/partner'
+import { AdminPartnersPage } from '@/pages/admin/partners'
 
 const sections = [
   { to: '/admin', label: 'Overview', end: true },
@@ -19,6 +21,7 @@ const sections = [
   { to: '/admin/gifts', label: 'Gifts' },
   { to: '/admin/bitebuddy', label: 'BiteBuddy' },
   { to: '/admin/ledger', label: 'Ledger' },
+  { to: '/admin/partners', label: 'Partners' },
 ]
 
 /** The operator dashboard at /admin. Lives outside the mini app's shell: no bottom nav, no wallet. */
@@ -73,6 +76,8 @@ export function AdminApp() {
           <Route path="gifts" element={<AdminGiftsPage />} />
           <Route path="bitebuddy/*" element={<AdminBiteBuddyPage />} />
           <Route path="ledger" element={<AdminLedgerPage />} />
+          <Route path="partners" element={<AdminPartnersPage />} />
+          <Route path="partners/:id" element={<AdminPartnerPage />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </main>

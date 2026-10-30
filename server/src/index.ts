@@ -10,13 +10,15 @@ import { giftCardsRouter } from './routes/giftcards'
 import { merchantsRouter } from './routes/merchants'
 import { offrampRouter } from './routes/offramp'
 import { onrampRouter } from './routes/onramp'
+import { v1Router } from './routes/v1'
 import { walletRouter } from './routes/wallet'
 import { webhooksRouter } from './routes/webhooks'
 import { startGiftCardWorker } from './services/giftcards'
 import { startMerchantWorker } from './services/merchants'
 import { canSendFromTreasury, checkRpcNetwork, giftEscrowAddress, treasuryAddress, WrongNetworkError } from './services/nimiq'
-import { startOfframpWorker } from './services/offramp'
+import { offrampEnabled, startOfframpWorker } from './services/offramp'
 import { onrampEnabled, startOnrampWorker } from './services/onramp'
+import { startPartnerApiWorker } from './services/partner-webhooks'
 import { startPetWorker } from './services/pets'
 import { PaystackError } from './services/paystack'
 import { attachVoiceServer } from './voice/session'
@@ -28,6 +30,8 @@ const app = express()
 
 app.use(cors({ origin: config.corsOrigins.length ? config.corsOrigins : true }))
 app.use('/api/webhooks', webhooksRouter)
+// The partner API parses its own (smaller) bodies and answers errors in its own envelope.
+app.use('/v1', v1Router)
 app.use(express.json({ limit: '10mb' }))
 
 app.get('/api/health', (_req, res) => {
@@ -90,6 +94,7 @@ server.listen(config.port, () => {
   console.log(`  Paystack: ${config.paystackSecretKey ? 'configured' : 'NOT CONFIGURED'} · Deepgram: ${config.deepgramApiKey ? 'configured' : 'NOT CONFIGURED'}`)
   console.log(`  Buy NIM (Bachs): ${onrampEnabled() ? `on via ${config.bachs.baseUrl}${config.bachs.webhookSecret ? '' : ' · BACHS_WEBHOOK_SECRET not set, so payments are found by polling only'}` : config.nimiq.network !== 'mainnet' ? 'OFF on testnet' : 'NOT CONFIGURED'}`)
   console.log(`  Admin API: dashboard sign-in on · token ${adminEnabled() ? 'on' : config.adminToken ? 'OFF · ADMIN_TOKEN must be at least 32 characters' : 'NOT CONFIGURED'}`)
+  console.log(`  Partner API: /v1 · sandbox on · live ${offrampEnabled() ? 'on' : 'OFF (needs mainnet, a treasury and Paystack)'}${config.partnerApi.publicUrl ? ` · ${config.partnerApi.publicUrl}/v1/openapi.json` : ''}`)
   console.log(`  Gift emails: ${config.resend.apiKey && config.resend.from ? `via Resend from ${config.resend.from}` : 'NOT CONFIGURED'}${config.miniAppUrl ? '' : ' · MINIAPP_URL not set, so emails carry the gift code but no link'}`)
 })
 
@@ -98,3 +103,4 @@ startGiftCardWorker()
 startMerchantWorker()
 startPetWorker()
 startOnrampWorker()
+startPartnerApiWorker()

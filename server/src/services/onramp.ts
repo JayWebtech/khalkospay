@@ -83,7 +83,7 @@ async function owedLuna(db: Db, now = new Date()): Promise<bigint> {
   const [gifts, revivals, cashouts, buys] = await Promise.all([
     db.giftCard.aggregate({ _sum: { receivedLuna: true }, where: { status: { in: ['ACTIVE', 'CLAIMING', 'REFUNDING'] }, OR: giftsInTreasury } }),
     db.petRevival.aggregate({ _sum: { receivedLuna: true }, where: { status: 'REFUNDING' } }),
-    db.offrampOrder.aggregate({ _sum: { receivedLuna: true }, where: { status: { in: ['PAYING_OUT', 'PAYOUT_FAILED', 'REFUNDING'] } } }),
+    db.offrampOrder.aggregate({ _sum: { receivedLuna: true }, where: { livemode: true, status: { in: ['PAYING_OUT', 'PAYOUT_FAILED', 'REFUNDING'] } } }),
     db.onrampOrder.aggregate({
       _sum: { nimLuna: true },
       where: { OR: [{ status: 'AWAITING_PAYMENT', checkoutExpiresAt: { gt: now } }, { status: { in: ['PAID', 'SENDING', 'NEEDS_REVIEW'] } }] },

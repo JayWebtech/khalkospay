@@ -113,7 +113,7 @@ async function walletCounts(since: Date) {
     SELECT count(*)::int AS total, count(*) FILTER (WHERE first_seen >= ${since})::int AS new7d
     FROM (
       SELECT address, min(at) AS first_seen FROM (
-        SELECT "userAddress" AS address, "createdAt" AS at FROM "OfframpOrder"
+        SELECT "userAddress" AS address, "createdAt" AS at FROM "OfframpOrder" WHERE "userAddress" IS NOT NULL
         UNION ALL SELECT "senderAddress", "createdAt" FROM "GiftCard"
         UNION ALL SELECT "claimerAddress", "claimedAt" FROM "GiftCard" WHERE "claimerAddress" IS NOT NULL AND "claimedAt" IS NOT NULL
         UNION ALL SELECT "ownerAddress", "createdAt" FROM "Pet"
@@ -130,6 +130,8 @@ export async function overview(now = new Date()) {
   const trendStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - (TREND_DAYS - 1) * DAY_MS)
   const recent = { createdAt: { gte: week } }
   const prior = { createdAt: { gte: fortnight, lt: week } }
+  // Partner sandbox (test key) cash-outs are simulated, so they stay out of every number.
+  const live = { livemode: true }
 
   const [
     wallets,
@@ -170,12 +172,12 @@ export async function overview(now = new Date()) {
     prisma.giftCard.count({ where: { emailSentAt: { not: null } } }),
     prisma.giftCard.count({ where: recent }),
     prisma.giftCard.count({ where: prior }),
-    prisma.offrampOrder.groupBy({ by: ['status'], _count: { _all: true } }),
-    prisma.offrampOrder.aggregate({ _sum: { receivedLuna: true }, where: { receivedLuna: { not: null } } }),
-    prisma.offrampOrder.aggregate({ _sum: { payoutKobo: true, feeKobo: true, nimLuna: true }, _count: { _all: true }, where: { status: 'COMPLETED' } }),
+    prisma.offrampOrder.groupBy({ by: ['status'], _count: { _all: true }, where: live }),
+    prisma.offrampOrder.aggregate({ _sum: { receivedLuna: true }, where: { ...live, receivedLuna: { not: null } } }),
+    prisma.offrampOrder.aggregate({ _sum: { payoutKobo: true, feeKobo: true, nimLuna: true }, _count: { _all: true }, where: { ...live, status: 'COMPLETED' } }),
     prisma.offrampOrder.count({ where: { source: 'voice' } }),
-    prisma.offrampOrder.count({ where: recent }),
-    prisma.offrampOrder.count({ where: prior }),
+    prisma.offrampOrder.count({ where: { ...live, ...recent } }),
+    prisma.offrampOrder.count({ where: { ...live, ...prior } }),
     prisma.onrampOrder.groupBy({ by: ['status'], _count: { _all: true } }),
     prisma.onrampOrder.aggregate({ _sum: { nimLuna: true }, _count: { _all: true }, where: { status: 'COMPLETED' } }),
     prisma.onrampOrder.groupBy({ by: ['fiatCurrency'], _sum: { paidAmount: true }, _count: { _all: true }, where: { paidAt: { not: null } } }),
@@ -195,7 +197,7 @@ export async function overview(now = new Date()) {
 
   const [tGifts, tCash, tBuys, tMeals, tPets] = await Promise.all([
     dailyCounts('GiftCard', trendStart),
-    dailyCounts('OfframpOrder', trendStart),
+    dailyCounts('OfframpOrder', trendStart, Prisma.sql`AND "livemode" = true`),
     dailyCounts('OnrampOrder', trendStart),
     dailyCounts('PetMeal', trendStart, Prisma.sql`AND "fed" = true`),
     dailyCounts('Pet', trendStart),
@@ -322,11 +324,15 @@ export async function listGifts(query: Record<string, unknown>) {
   return page(await prisma.giftCard.findMany({ where, ...pageArgs(p) }), p, giftDto)
 }
 
-function cashoutDto(o: OfframpOrder & { ledger: LedgerEntry[] }) {
+function cashoutDto(o: OfframpOrder & { ledger: LedgerEntry[]; partner: { id: string; name: string } | null }) {
   return {
     id: o.id,
     reference: o.reference,
     source: o.source,
+    livemode: o.livemode,
+    partner: o.partner,
+    partnerReference: o.partnerReference,
+    metadata: o.metadata,
     status: o.status,
     userAddress: o.userAddress,
     nimAmount: formatNim(o.nimLuna),
@@ -340,6 +346,7 @@ function cashoutDto(o: OfframpOrder & { ledger: LedgerEntry[] }) {
     accountNumber: o.accountNumber,
     depositTxHash: o.depositTxHash,
     depositFrom: o.depositFrom,
+    refundAddress: o.refundAddress,
     depositConfirmedAt: iso(o.depositConfirmedAt),
     paystackTransferCode: o.paystackTransferCode,
     paidAt: iso(o.paidAt),
@@ -352,15 +359,19 @@ function cashoutDto(o: OfframpOrder & { ledger: LedgerEntry[] }) {
   }
 }
 
+/** Live cash-outs; `?mode=test` lists partner sandbox ones instead, and `?partnerId=` narrows to one partner. */
 export async function listCashouts(query: Record<string, unknown>) {
   const p = listParams(query, Object.values(OfframpStatus))
   const where: Prisma.OfframpOrderWhereInput = {
+    livemode: query.mode !== 'test',
+    ...(typeof query.partnerId === 'string' && query.partnerId ? { partnerId: query.partnerId } : {}),
     ...(p.status ? { status: p.status } : {}),
     ...(p.q
       ? {
           OR: [
             { id: p.q },
             { reference: contains(p.q) },
+            { partnerReference: contains(p.q) },
             { userAddress: contains(p.q) },
             { accountName: contains(p.q) },
             { accountNumber: contains(p.q) },
@@ -370,7 +381,12 @@ export async function listCashouts(query: Record<string, unknown>) {
         }
       : {}),
   }
-  return page(await prisma.offrampOrder.findMany({ where, include: { ledger: { orderBy: { createdAt: 'asc' } } }, ...pageArgs(p) }), p, cashoutDto)
+  const rows = await prisma.offrampOrder.findMany({
+    where,
+    include: { ledger: { orderBy: { createdAt: 'asc' } }, partner: { select: { id: true, name: true } } },
+    ...pageArgs(p),
+  })
+  return page(rows, p, cashoutDto)
 }
 
 export async function listPets(query: Record<string, unknown>) {

@@ -88,7 +88,7 @@ export function ActivityList<T extends { id: string }>({
         if (cursor) search.set('cursor', cursor)
       }
       const qs = search.toString()
-      return qs ? `${endpoint}?${qs}` : endpoint
+      return qs ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}${qs}` : endpoint
     },
     [endpoint, status, q, serverPaged],
   )

@@ -8,6 +8,12 @@ function num(name: string, fallback: number) {
   return value
 }
 
+function seconds(name: string, fallback: string) {
+  const list = (process.env[name] || fallback).split(',').map((s) => Number(s.trim()))
+  if (list.some((n) => !Number.isFinite(n) || n < 0)) throw new Error(`${name} must be a comma-separated list of seconds`)
+  return list
+}
+
 const network = process.env.NIMIQ_NETWORK === 'testnet' ? 'testnet' : 'mainnet'
 
 export const config = {
@@ -34,6 +40,19 @@ export const config = {
     depositGraceSeconds: num('OFFRAMP_DEPOSIT_GRACE_SECONDS', 300),
     depositLookupTimeoutSeconds: num('OFFRAMP_DEPOSIT_LOOKUP_TIMEOUT_SECONDS', 1800),
     rateOverride: process.env.RATE_OVERRIDE_NGN_PER_NIM || '',
+  },
+  partnerApi: {
+    /** Requests per minute per API key, across /v1. */
+    rateLimitPerMinute: num('PARTNER_API_RATE_LIMIT_PER_MINUTE', 120),
+    /** Bank account lookups per minute per key; each live one is a Paystack call. */
+    resolveLimitPerMinute: num('PARTNER_API_RESOLVE_LIMIT_PER_MINUTE', 30),
+    /** Seconds to wait before each webhook retry. An event gets one attempt more than there are entries (~2 days by default). */
+    webhookRetrySeconds: seconds('PARTNER_WEBHOOK_RETRY_SECONDS', '30,120,600,1800,3600,10800,21600,43200,86400'),
+    webhookTimeoutMs: num('PARTNER_WEBHOOK_TIMEOUT_MS', 10_000),
+    /** How long a sandbox (test key) order waits in each state, so integrators can watch every step go by. */
+    sandboxStepMs: num('PARTNER_SANDBOX_STEP_MS', 3_000),
+    /** Public base URL of this server (e.g. https://api.khalkospay.app), listed in the OpenAPI spec. */
+    publicUrl: (process.env.PUBLIC_API_URL || '').trim().replace(/\/+$/, ''),
   },
   gifts: {
     fundingTtlSeconds: num('GIFT_FUNDING_TTL_SECONDS', 3600),
